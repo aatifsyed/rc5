@@ -2,6 +2,66 @@ use std::mem::{size_of, size_of_val};
 
 use anyhow::ensure;
 
+/// Create an encoder with a runtime word size
+pub fn encoder<'wrapped, 'byte, WrappedT>(
+    word_size: WordSize,
+    num_rounds: u8,
+    key: impl AsRef<[u8]>,
+    plaintext: WrappedT,
+) -> Result<Box<dyn Iterator<Item = u8> + 'wrapped>, crate::SecretKeyTooLarge>
+where
+    WrappedT: IntoIterator<Item = &'byte u8> + 'wrapped,
+{
+    macro_rules! iter_encoder {
+        ($ty:ty) => {
+            Ok(Box::new(crate::IterEncoder::new(
+                crate::Transcoder::<$ty>::new(
+                    crate::SecretKey::try_from(key.as_ref())?,
+                    num_rounds,
+                ),
+                plaintext,
+            )))
+        };
+    }
+    match word_size {
+        WordSize::_8 => iter_encoder!(u8),
+        WordSize::_16 => iter_encoder!(u16),
+        WordSize::_32 => iter_encoder!(u32),
+        WordSize::_64 => iter_encoder!(u64),
+        WordSize::_128 => iter_encoder!(u128),
+    }
+}
+
+/// Create a decoder with a runtime word size
+pub fn decoder<'wrapped, 'byte, WrappedT>(
+    word_size: WordSize,
+    num_rounds: u8,
+    key: impl AsRef<[u8]>,
+    plaintext: WrappedT,
+) -> Result<Box<dyn Iterator<Item = u8> + 'wrapped>, crate::SecretKeyTooLarge>
+where
+    WrappedT: IntoIterator<Item = &'byte u8> + 'wrapped,
+{
+    macro_rules! iter_decoder {
+        ($ty:ty) => {
+            Ok(Box::new(crate::IterDecoder::new(
+                crate::Transcoder::<$ty>::new(
+                    crate::SecretKey::try_from(key.as_ref())?,
+                    num_rounds,
+                ),
+                plaintext,
+            )))
+        };
+    }
+    match word_size {
+        WordSize::_8 => iter_decoder!(u8),
+        WordSize::_16 => iter_decoder!(u16),
+        WordSize::_32 => iter_decoder!(u32),
+        WordSize::_64 => iter_decoder!(u64),
+        WordSize::_128 => iter_decoder!(u128),
+    }
+}
+
 /// The proposed representation of RC5 encryption parameters on the wire
 #[derive(Debug, PartialEq, Eq)]
 #[repr(packed)]
@@ -20,24 +80,13 @@ impl ControlBlock {
         InnerT: 'inner,
         InnerT: IntoIterator<Item = &'iter u8>,
     {
-        macro_rules! iter_encoder {
-            ($ty:ty) => {
-                Box::new(crate::IterEncoder::new(
-                    crate::Transcoder::<$ty>::new(
-                        crate::SecretKey { buffer: &self.key },
-                        self.header.num_rounds,
-                    ),
-                    inner,
-                ))
-            };
-        }
-        match self.header.bits_per_word {
-            Width::_8 => iter_encoder!(u8),
-            Width::_16 => iter_encoder!(u16),
-            Width::_32 => iter_encoder!(u32),
-            Width::_64 => iter_encoder!(u64),
-            Width::_128 => iter_encoder!(u128),
-        }
+        encoder(
+            self.header.word_size,
+            self.header.num_rounds,
+            &self.key,
+            inner,
+        )
+        .expect("secret key len is valid (so fits in u8 already)")
     }
     // oh we love to wrangle lifetimes
     pub fn decoder<'inner, 'iter, InnerT>(
@@ -48,24 +97,13 @@ impl ControlBlock {
         InnerT: 'inner,
         InnerT: IntoIterator<Item = &'iter u8>,
     {
-        macro_rules! iter_decoder {
-            ($ty:ty) => {
-                Box::new(crate::IterDecoder::new(
-                    crate::Transcoder::<$ty>::new(
-                        crate::SecretKey { buffer: &self.key },
-                        self.header.num_rounds,
-                    ),
-                    inner,
-                ))
-            };
-        }
-        match self.header.bits_per_word {
-            Width::_8 => iter_decoder!(u8),
-            Width::_16 => iter_decoder!(u16),
-            Width::_32 => iter_decoder!(u32),
-            Width::_64 => iter_decoder!(u64),
-            Width::_128 => iter_decoder!(u128),
-        }
+        decoder(
+            self.header.word_size,
+            self.header.num_rounds,
+            &self.key,
+            inner,
+        )
+        .expect("secret key len is valid (so fits in u8 already)")
     }
 }
 
@@ -73,7 +111,7 @@ impl ControlBlock {
 #[repr(packed)]
 pub struct ControlBlockHeader {
     pub version: Version,
-    pub bits_per_word: Width,
+    pub word_size: WordSize,
     pub num_rounds: u8,
     pub key_length: u8,
 }
@@ -88,7 +126,7 @@ pub enum Version {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::TryFromPrimitive)]
 #[repr(u8)]
-pub enum Width {
+pub enum WordSize {
     _8 = u8::BITS as _,
     _16 = u16::BITS as _,
     _32 = u32::BITS as _,
@@ -111,7 +149,7 @@ impl TryFrom<&[u8]> for &ControlBlock {
         );
         let apparent_bits_per_word = value[1];
         ensure!(
-            Width::try_from(apparent_bits_per_word).is_ok(),
+            WordSize::try_from(apparent_bits_per_word).is_ok(),
             "unsupported word width {apparent_bits_per_word}",
         );
         let apparent_key_length = value[3];
@@ -140,7 +178,7 @@ impl<const N: usize> TryFrom<&[u8; N]> for &ControlBlock {
 mod tests {
     use super::*;
 
-    impl Width {
+    impl WordSize {
         fn of<T>() -> Self {
             let num_bits = size_of::<T>() * 8;
             let num_bits = u8::try_from(num_bits).unwrap();
@@ -156,7 +194,7 @@ mod tests {
             control_block.header,
             ControlBlockHeader {
                 version: Version::_1,
-                bits_per_word: Width::_16,
+                word_size: WordSize::_16,
                 num_rounds: 0,
                 key_length: 0
             }
@@ -184,7 +222,7 @@ mod tests {
             control_block.header,
             ControlBlockHeader {
                 version: Version::_1,
-                bits_per_word: Width::_16,
+                word_size: WordSize::_16,
                 num_rounds: 0,
                 key_length: 1,
             }
@@ -208,7 +246,7 @@ mod tests {
         let backing_storage = hex::decode(hex_encoded).unwrap();
         let control_block = <&ControlBlock>::try_from(&backing_storage[..]).unwrap();
         assert_eq!(usize::from(control_block.header.key_length), key.len());
-        assert_eq!(control_block.header.bits_per_word, Width::of::<T>());
+        assert_eq!(control_block.header.word_size, WordSize::of::<T>());
         assert_eq!(control_block.header.num_rounds, num_rounds);
         assert_eq!(&control_block.key, key);
 

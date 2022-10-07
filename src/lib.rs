@@ -25,7 +25,7 @@ use std::{
 mod dynamic;
 mod iter_decoder;
 mod iter_encoder;
-pub use dynamic::{ControlBlock, ControlBlockHeader, Version, Width};
+pub use dynamic::{decoder, encoder, ControlBlock, ControlBlockHeader, Version, WordSize};
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
