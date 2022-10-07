@@ -1,6 +1,10 @@
 #![allow(non_snake_case)]
 #![feature(const_for, const_mut_refs, const_trait_impl)]
-use std::{borrow::Cow, mem::size_of, num::NonZeroUsize};
+use std::{
+    borrow::Cow,
+    mem::{align_of, size_of},
+    num::NonZeroUsize,
+};
 // TODO:
 // - test endianness
 // - move as much as possible to compile time
@@ -39,12 +43,16 @@ where
         };
         match bytemuck::try_cast_slice(value.buffer) {
             Ok(words) => Cow::Borrowed(words),
-            Err(AlignmentMismatch) | Err(TargetAlignmentGreaterAndInputNotAligned) => {
-                unreachable!("align_of::<impl Word>() == align_of::<u8>() (Word is a sealed trait)")
+            Err(TargetAlignmentGreaterAndInputNotAligned) => {
+                unreachable!("alignment should fit - see implementation of sealed trait Word")
             }
+            Err(AlignmentMismatch) => unreachable!("slice not a Box or Vec"),
             Err(OutputSliceWouldHaveSlop) => {
                 let b = value.buffer.len();
-                assert_ne!(b, 0, "empty slices should have been Cow::Borrowed");
+                assert_ne!(
+                    b, 0,
+                    "empty slices should have been caught in Cow::Borrowed branch"
+                );
                 // make L at least as many bytes long as secret_key
                 let mut backing_words =
                     vec![WordT::zero(); num::integer::div_ceil(b, size_of::<WordT>())];
@@ -89,18 +97,20 @@ pub trait Word: sealed::Sealed {
     /// A magic constant
     const Q: Self;
 }
-impl Word for u16 {
-    const P: Self = 0xB7E1;
-    const Q: Self = 0x9E37;
+
+macro_rules! impl_word {
+    ($ty:ty, P = $p:expr, Q = $q:expr) => {
+        impl Word for $ty {
+            const P: Self = $p;
+            const Q: Self = $q;
+        }
+        static_assertions::const_assert_eq!(align_of::<$ty>() % align_of::<u8>(), 0);
+    };
 }
-impl Word for u32 {
-    const P: Self = 0xB7E15163;
-    const Q: Self = 0x9E3779B9;
-}
-impl Word for u64 {
-    const P: Self = 0xB7E151628AED2A6B;
-    const Q: Self = 0x9E3779B97F4A7C15;
-}
+
+impl_word!(u16, P = 0xB7E1, Q = 0x9E37);
+impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
+impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
 
 trait ConstZero {
     const ZERO: Self;
