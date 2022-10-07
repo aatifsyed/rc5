@@ -1,10 +1,29 @@
-use std::{collections::VecDeque, iter::Fuse, mem::size_of};
+use std::{
+    collections::VecDeque,
+    fmt,
+    iter::{Fuse, FusedIterator},
+    mem::size_of,
+};
 
 use crate::Transcoder;
 
+/// An iterator adaptor that decodes bytes that pass through it
 pub struct Decoder<WordT, InnerT> {
     word_encoder: WordDecoder<WordT, InnerT>,
     buffer: VecDeque<u8>,
+}
+
+impl<'a, WordT, InnerT> FusedIterator for Decoder<WordT, InnerT>
+where
+    InnerT: Iterator<Item = &'a u8>,
+    WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
+{
+}
+
+impl<WordT, InnerT> fmt::Debug for Decoder<WordT, InnerT> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Decoder").finish_non_exhaustive()
+    }
 }
 
 impl<WordT, InnerT> Decoder<WordT, InnerT>
