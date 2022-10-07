@@ -20,10 +20,10 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
-mod decoder;
-mod encoder;
-pub use decoder::Decoder;
-pub use encoder::Encoder;
+mod iter_decoder;
+mod iter_encoder;
+pub use iter_decoder::IterDecoder;
+pub use iter_encoder::IterEncoder;
 
 pub const MAX_KEY_LEN: usize = 255;
 
@@ -45,7 +45,7 @@ where
     WordT:
         Word + bytemuck::Pod + num::PrimInt + num::traits::WrappingAdd + num::traits::WrappingSub,
 {
-    Encoder::new(
+    IterEncoder::new(
         Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         plaintext.as_ref(),
     )
@@ -70,7 +70,7 @@ where
     WordT:
         Word + bytemuck::Pod + num::PrimInt + num::traits::WrappingAdd + num::traits::WrappingSub,
 {
-    Decoder::new(
+    IterDecoder::new(
         Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         ciphertext.as_ref(),
     )

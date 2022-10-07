@@ -8,25 +8,25 @@ use std::{
 use crate::Transcoder;
 
 /// An iterator adaptor that decodes bytes that pass through it
-pub struct Decoder<WordT, InnerT> {
+pub struct IterDecoder<WordT, InnerT> {
     word_encoder: WordDecoder<WordT, InnerT>,
     buffer: VecDeque<u8>,
 }
 
-impl<'a, WordT, InnerT> FusedIterator for Decoder<WordT, InnerT>
+impl<'a, WordT, InnerT> FusedIterator for IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator<Item = &'a u8>,
     WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
 {
 }
 
-impl<WordT, InnerT> fmt::Debug for Decoder<WordT, InnerT> {
+impl<WordT, InnerT> fmt::Debug for IterDecoder<WordT, InnerT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Decoder").finish_non_exhaustive()
     }
 }
 
-impl<WordT, InnerT> Decoder<WordT, InnerT>
+impl<WordT, InnerT> IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
@@ -38,7 +38,7 @@ where
     }
 }
 
-impl<'a, WordT, InnerT> Iterator for Decoder<WordT, InnerT>
+impl<'a, WordT, InnerT> Iterator for IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator<Item = &'a u8>,
     WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
