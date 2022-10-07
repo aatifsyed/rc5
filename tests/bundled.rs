@@ -6,8 +6,8 @@ fn encode_a() {
     ];
     let pt = vec![0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
     let ct = vec![0x2D, 0xDC, 0x14, 0x9B, 0xCF, 0x08, 0x8B, 0x9E];
-    let res = rc5::encode(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
-    assert!(&ct[..] == &res[..]);
+    let res = rc5::encode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
+    assert_eq!(&ct[..], &res[..]);
 }
 
 #[test]
@@ -18,8 +18,8 @@ fn encode_b() {
     ];
     let pt = vec![0xEA, 0x02, 0x47, 0x14, 0xAD, 0x5C, 0x4D, 0x84];
     let ct = vec![0x11, 0xE4, 0x3B, 0x86, 0xD2, 0x31, 0xEA, 0x64];
-    let res = rc5::encode(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
-    assert!(&ct[..] == &res[..]);
+    let res = rc5::encode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
+    assert_eq!(&ct[..], &res[..]);
 }
 
 #[test]
