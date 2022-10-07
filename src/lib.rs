@@ -1,7 +1,6 @@
-use std::mem::size_of;
+use std::{borrow::Cow, mem::size_of, num::NonZeroUsize};
 
 use anyhow::ensure;
-use num::Zero;
 
 #[derive(Debug, Clone, Copy)]
 /// Buffer guaranteed to be of a valid length for RC5
@@ -19,6 +18,26 @@ impl<'a> TryFrom<&'a [u8]> for SecretKey<'a> {
             "secret key length of {num_bytes} is not in allowed range 0..=255"
         );
         Ok(Self { buffer })
+    }
+}
+
+pub struct SecretKeyWords<'a, WordT>
+where
+    [WordT]: ToOwned,
+{
+    buffer: Cow<'a, [WordT]>,
+}
+
+impl<'a, WordT: bytemuck::Pod> TryFrom<SecretKey<'a>> for SecretKeyWords<'a, WordT> {
+    type Error = bytemuck::PodCastError;
+
+    fn try_from(value: SecretKey<'a>) -> Result<Self, Self::Error> {
+        // TODO: could probably have Cow<[WordT]> and lengthen in the case that the buffer doesn't fit a whole number of words
+        // have I just not read the spec carefully enough?
+        let buffer = bytemuck::try_cast_slice(value.buffer)?;
+        Ok(Self {
+            buffer: Cow::Borrowed(buffer),
+        })
     }
 }
 
@@ -70,8 +89,8 @@ mod sealed {
     impl Sealed for u64 {}
 }
 
-// could we just have a static table for num_rounds = 255 for each type? probably
-fn make_round_subkey_words<WordT: Word + num::Zero + Clone + num::traits::WrappingAdd>(
+// could we just have a static table for num_rounds = 255 for each type? probably - would save us allocating
+fn make_constant_working_array<WordT: Word + num::Zero + Clone + num::traits::WrappingAdd>(
     num_rounds: u8,
 ) -> Vec<WordT> {
     let t = 2 * (usize::from(num_rounds) + 1);
@@ -102,31 +121,42 @@ fn make_secret_key_working_array<WordT: num::Zero + Clone + bytemuck::Pod>(
     L
 }
 
+fn make_s_array<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
+    key: SecretKey,
+    num_rounds: u8,
+) -> Vec<WordT> {
+    let mut L = make_secret_key_working_array::<WordT>(key);
+    let mut S = make_constant_working_array::<WordT>(num_rounds);
+
+    let (mut i, mut j) = (0, 0);
+    let (mut A, mut B) = (WordT::zero(), WordT::zero());
+
+    let c = NonZeroUsize::new(L.len())
+        .unwrap_or(NonZeroUsize::new(1).unwrap())
+        .get();
+    let t = 2 * (num_rounds as usize + 1);
+
+    for _ in 0..(std::cmp::max(t, c) * 3) {
+        S[i] = (S[i].wrapping_add(&A).wrapping_add(&B)).rotate_left(3);
+        A = S[i];
+        L[j] = (L[j].wrapping_add(&A).wrapping_add(&B))
+            .rotate_left(A.wrapping_add(&B).to_u32().expect("word is too wide"));
+        B = L[j];
+        i = (i + 1) % t;
+        j = (j + 1) % c;
+    }
+    S
+}
+
 /*
  * This function should return a cipher text for a given key and plaintext
  *
  */
 pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    const c: usize = 4; // The length of the key in words (or 1, if b = 0).
     const r: usize = 12; // The number of rounds to use when encrypting data.
-    const t: usize = 2 * (r + 1); // the number of round subkeys required.
 
-    let mut L = make_secret_key_working_array::<Word>(key);
-    let mut S = make_round_subkey_words::<Word>(r.try_into().unwrap());
-
-    let (mut i, mut j) = (0, 0);
-    let (mut A, mut B) = (Word::zero(), Word::zero());
-
-    for _ in 0..(std::cmp::max(t, c) * 3) {
-        S[i] = (S[i].wrapping_add(A).wrapping_add(B)).rotate_left(3);
-        A = S[i];
-        L[j] = (L[j].wrapping_add(A).wrapping_add(B)).rotate_left(A.wrapping_add(B));
-        B = L[j];
-        i = (i + 1) % t;
-        j = (j + 1) % c;
-    }
-
+    let S = make_s_array(key, r as _);
     let plaintext = bytemuck::cast_slice::<_, Word>(plaintext.as_ref());
 
     let mut A = plaintext[0].wrapping_add(S[0]);
@@ -146,24 +176,9 @@ pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) ->
  */
 pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    const c: usize = 4; // The length of the key in words (or 1, if b = 0).
     const r: usize = 12; // The number of rounds to use when encrypting data.
-    const t: usize = 2 * (r + 1); // the number of round subkeys required.
 
-    let mut L = make_secret_key_working_array::<Word>(key);
-    let mut S = make_round_subkey_words::<Word>(r.try_into().unwrap());
-
-    let (mut i, mut j) = (0, 0);
-    let (mut A, mut B) = (Word::zero(), Word::zero());
-
-    for _ in 0..(std::cmp::max(t, c) * 3) {
-        S[i] = (S[i].wrapping_add(A).wrapping_add(B)).rotate_left(3);
-        A = S[i];
-        L[j] = (L[j].wrapping_add(A).wrapping_add(B)).rotate_left(A.wrapping_add(B));
-        B = L[j];
-        i = (i + 1) % t;
-        j = (j + 1) % c;
-    }
+    let S = make_s_array(key, r as _);
 
     let ciphertext = bytemuck::cast_slice::<_, Word>(ciphertext.as_ref());
 
