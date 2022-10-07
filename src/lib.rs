@@ -1,6 +1,9 @@
+use std::mem::size_of;
+
 use anyhow::ensure;
 use num::Zero;
 
+#[derive(Debug, Clone, Copy)]
 /// Buffer guaranteed to be of a valid length for RC5
 pub struct SecretKey<'a> {
     buffer: &'a [u8],
@@ -67,6 +70,7 @@ mod sealed {
     impl Sealed for u64 {}
 }
 
+// could we just have a static table for num_rounds = 255 for each type? probably
 fn make_round_subkey_words<WordT: Word + num::Zero + Clone + num::traits::WrappingAdd>(
     num_rounds: u8,
 ) -> Vec<WordT> {
@@ -79,22 +83,36 @@ fn make_round_subkey_words<WordT: Word + num::Zero + Clone + num::traits::Wrappi
     S
 }
 
+fn make_secret_key_working_array<WordT: num::Zero + Clone + bytemuck::Pod>(
+    key: SecretKey,
+) -> Vec<WordT> {
+    let mut b = key.buffer.len();
+    if b == 0 {
+        b = 1
+    }
+    // make L at least as many bytes long as secret_key
+    let mut L = vec![WordT::zero(); num::integer::div_ceil(b, size_of::<WordT>())];
+    for (src, dst) in key
+        .buffer
+        .iter()
+        .zip(bytemuck::cast_slice_mut::<_, u8>(&mut L))
+    {
+        *dst = *src
+    }
+    L
+}
+
 /*
  * This function should return a cipher text for a given key and plaintext
  *
  */
 pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    let K = key.buffer; // The key, considered as an array of bytes (using 0-based indexing).
     const c: usize = 4; // The length of the key in words (or 1, if b = 0).
-    let mut L = [Word::zero(); c]; // A temporary working array used during key scheduling. initialized to the key in words.
     const r: usize = 12; // The number of rounds to use when encrypting data.
     const t: usize = 2 * (r + 1); // the number of round subkeys required.
 
-    for (src, dst) in K.iter().zip(bytemuck::cast_slice_mut::<_, u8>(&mut L)) {
-        *dst = *src;
-    }
-
+    let mut L = make_secret_key_working_array::<Word>(key);
     let mut S = make_round_subkey_words::<Word>(r.try_into().unwrap());
 
     let (mut i, mut j) = (0, 0);
@@ -128,16 +146,11 @@ pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) ->
  */
 pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    let K = key.buffer; // The key, considered as an array of bytes (using 0-based indexing).
     const c: usize = 4; // The length of the key in words (or 1, if b = 0).
-    let mut L = [Word::zero(); c]; // A temporary working array used during key scheduling. initialized to the key in words.
     const r: usize = 12; // The number of rounds to use when encrypting data.
     const t: usize = 2 * (r + 1); // the number of round subkeys required.
 
-    for (src, dst) in K.iter().zip(bytemuck::cast_slice_mut::<_, u8>(&mut L)) {
-        *dst = *src;
-    }
-
+    let mut L = make_secret_key_working_array::<Word>(key);
     let mut S = make_round_subkey_words::<Word>(r.try_into().unwrap());
 
     let (mut i, mut j) = (0, 0);
