@@ -5,8 +5,11 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
+mod encoder;
+pub use encoder::Encoder;
 
 use anyhow::{anyhow, Context};
+use tap::Pipe;
 // TODO:
 // - test endianness
 // - add a compile time API for num_rounds
@@ -293,15 +296,13 @@ pub fn encode_block_rc5_32_12_16(
 ) -> anyhow::Result<Vec<u8>> {
     type Word = u32;
     let num_rounds = 12;
-    let plaintext_block: &[Word; 2] = bytemuck::try_cast_slice(plaintext.as_ref())
-        .map_err(|e| anyhow!(e))?
-        .try_into()
-        .context("invalid block length")?;
-    Ok(Transcoder::try_new(key, num_rounds)?
-        .encode_block(plaintext_block)
-        .into_iter()
-        .flat_map(u32::to_le_bytes)
-        .collect())
+
+    Encoder::new(
+        Transcoder::<Word>::try_new(key, num_rounds)?,
+        plaintext.as_ref(),
+    )
+    .collect::<Vec<_>>()
+    .pipe(Ok)
 }
 
 /*
