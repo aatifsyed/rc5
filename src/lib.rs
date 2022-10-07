@@ -25,16 +25,17 @@ use std::{
     mem::{align_of, size_of},
 };
 mod dynamic;
-mod io;
-mod iter_decoder;
-mod iter_encoder;
+mod io_impl;
+mod iter_impl;
 pub use dynamic::{ControlBlock, ControlBlockHeader, Version, WordSize};
-pub use iter_decoder::IterDecoder;
-pub use iter_encoder::IterEncoder;
+pub use io_impl::{IoDecoder, IoEncoder};
+pub use iter_impl::{IterDecoder, IterEncoder};
 
 pub mod iter {
     pub use crate::dynamic::{decoder, encoder};
 }
+
+// TODO have an io::encoder, io::decoder
 
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
 
