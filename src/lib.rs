@@ -2,11 +2,11 @@
 #![feature(const_for, const_mut_refs, const_trait_impl)]
 use std::{
     borrow::Cow,
+    fmt,
     mem::{align_of, size_of},
 };
 
 use anyhow::{anyhow, Context};
-use zeroize::Zeroize;
 // TODO:
 // - test endianness
 // - add a compile time API for num_rounds
@@ -160,19 +160,19 @@ const fn t(num_rounds: u8) -> usize {
 }
 const T_MAX: usize = t(u8::MAX);
 
-#[derive(zeroize::Zeroize)]
-pub struct Transcoder<WordT: zeroize::Zeroize> {
+#[derive(Clone, Copy, zeroize::Zeroize)]
+pub struct Transcoder<WordT> {
     S: [WordT; T_MAX],
     num_rounds: u8,
 }
 
-impl<WordT: zeroize::Zeroize> Drop for Transcoder<WordT> {
-    fn drop(&mut self) {
-        self.zeroize()
+impl<WordT> fmt::Debug for Transcoder<WordT> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transcoder").finish_non_exhaustive()
     }
 }
 
-impl<WordT: zeroize::Zeroize> Transcoder<WordT>
+impl<WordT> Transcoder<WordT>
 where
     WordT: Word
         + num::PrimInt
@@ -194,7 +194,7 @@ where
         Ok(Self::new(key, num_rounds))
     }
 }
-impl<WordT: zeroize::Zeroize> Transcoder<WordT>
+impl<WordT> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingAdd,
 {
@@ -216,7 +216,7 @@ where
         [A, B]
     }
 }
-impl<WordT: zeroize::Zeroize> Transcoder<WordT>
+impl<WordT> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
