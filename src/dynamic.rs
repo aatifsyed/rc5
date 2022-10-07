@@ -134,10 +134,10 @@ pub enum WordSize {
     _128 = u128::BITS as _,
 }
 
-impl TryFrom<&[u8]> for &ControlBlock {
+impl<'a> TryFrom<&'a [u8]> for &'a ControlBlock {
     type Error = anyhow::Error;
 
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {
         ensure!(
             value.len() >= size_of::<ControlBlockHeader>(),
             "header is too short"
@@ -162,14 +162,19 @@ impl TryFrom<&[u8]> for &ControlBlock {
         // should really use #![feature(ptr_metadata)] and feature gate on crate
         let control_block = &value[..value.len() - size_of::<ControlBlockHeader>()] as *const [u8]
             as *const ControlBlock;
-        Ok(unsafe { &*control_block })
+        let control_block = unsafe { &*control_block };
+        assert_eq!(
+            usize::from(control_block.header.key_length),
+            control_block.key.len()
+        );
+        Ok(control_block)
     }
 }
 
-impl<const N: usize> TryFrom<&[u8; N]> for &ControlBlock {
+impl<'a, const N: usize> TryFrom<&'a [u8; N]> for &'a ControlBlock {
     type Error = anyhow::Error;
 
-    fn try_from(value: &[u8; N]) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a [u8; N]) -> Result<Self, Self::Error> {
         value.as_slice().try_into()
     }
 }
