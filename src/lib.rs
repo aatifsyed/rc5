@@ -1,5 +1,3 @@
-#![allow(non_snake_case)]
-#![feature(const_for, const_mut_refs, const_trait_impl)]
 use std::{
     borrow::Cow,
     fmt,
@@ -79,26 +77,6 @@ where
 // Could be persuaded once `awint` and `num` are better friends.
 pub trait Word: sealed::Sealed {
     /// A magic constant
-    /// This can't be const fn<T: Word>() because float arith in const fn is not supported
-    /// Can't be runtime calculated because my implementation has floating point errors :(
-    /// ```
-    /// # use std::mem::size_of;
-    /// # use num::ToPrimitive;
-    ///
-    /// pub fn P<T: num::NumCast>() -> T {
-    ///     let num_bits = size_of::<T>() * 8;
-    ///     let not_rounded = (std::f64::consts::E - 2.0)
-    ///         * 2f64.powf(num_bits.to_f64().expect("too many bits to fit in an f64"));
-    ///     let rounded = math::round::half_to_odd(
-    ///         not_rounded,
-    ///         0, // no decimal places
-    ///     );
-    ///     num::NumCast::from(rounded).expect("couldn't cast from f64")
-    /// }
-    /// assert_eq!(P::<u16>(), 0xB7E1);
-    /// assert_eq!(P::<u32>(), 0xB7E15163);
-    /// // assert_eq!(P::<u64>(), 0xB7E151628AED2A6B); // fails
-    /// ```
     const P: Self;
     /// A magic constant
     const Q: Self;
@@ -120,39 +98,6 @@ impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
 impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
 // impl_word!(u128, P = ???, Q = ???);
 
-pub trait ConstZero {
-    const ZERO: Self;
-}
-
-macro_rules! impl_const_zero {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl ConstZero for $ty {
-                const ZERO: Self = 0;
-            }
-        )*
-    };
-}
-impl_const_zero!(u8, u16, u32, u64, u128);
-
-#[const_trait]
-pub trait ConstWrappingAdd {
-    fn wrapping_add(self, rhs: Self) -> Self;
-}
-
-macro_rules! impl_const_wrapping_add {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            impl const ConstWrappingAdd for $ty {
-                fn wrapping_add(self, rhs: Self) -> Self {
-                    <$ty>::wrapping_add(self, rhs)
-            }
-        })*
-    };
-}
-
-impl_const_wrapping_add!(u8, u16, u32, u64, u128);
-
 mod sealed {
     pub trait Sealed {}
     impl Sealed for u16 {}
@@ -166,6 +111,7 @@ const fn t(num_rounds: u8) -> usize {
 const T_MAX: usize = t(u8::MAX);
 
 #[derive(Clone, Copy, zeroize::Zeroize)]
+#[allow(non_snake_case)]
 pub struct Transcoder<WordT> {
     S: [WordT; T_MAX],
     num_rounds: u8,
@@ -183,8 +129,6 @@ where
         + num::PrimInt
         + Clone
         + bytemuck::Pod
-        + ConstZero
-        + ConstWrappingAdd
         + num::traits::WrappingAdd
         + num::traits::WrappingSub,
 {
@@ -206,6 +150,7 @@ where
     // We could overwrite plaintext in place, but the optimizer will probably notice for us, so this becomes the caller's decision
     // Method rather than pub fn so we guarantee that we can index into S
     pub fn encode_block(&self, plaintext: &[WordT; 2]) -> [WordT; 2] {
+        #![allow(non_snake_case)]
         let mut A = plaintext[0].wrapping_add(&self.S[0]);
         let mut B = plaintext[1].wrapping_add(&self.S[1]);
 
@@ -226,6 +171,7 @@ where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
     pub fn decode_block(&self, ciphertext: &[WordT; 2]) -> [WordT; 2] {
+        #![allow(non_snake_case)]
         let mut B = ciphertext[1];
         let mut A = ciphertext[0];
 
@@ -246,25 +192,25 @@ where
 
 // save a heap allocation for the s array
 // array size could be const N, but since it depends on `num_rounds`, but jumping from a runtime num_rounds (which we want) to a compile time num_rounds (which we don't want) is hard
-const fn unmixed_s<WordT: Word + ConstZero + Copy + ~const ConstWrappingAdd>(
+fn unmixed_s<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
     num_rounds: u8,
 ) -> [WordT; T_MAX] {
-    let mut S = [WordT::ZERO; T_MAX];
+    #![allow(non_snake_case)]
+    let mut S = [WordT::zero(); T_MAX];
     S[0] = WordT::P;
     let mut i = 1;
     while i < t(num_rounds) {
-        S[i] = S[i - 1].wrapping_add(WordT::Q);
+        S[i] = S[i - 1].wrapping_add(&WordT::Q);
         i += 1;
     }
     S
 }
 
-fn mixed_s<
-    WordT: Word + num::PrimInt + Clone + bytemuck::Pod + ConstZero + ~const ConstWrappingAdd,
->(
+fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
     key: SecretKey,
     num_rounds: u8,
 ) -> [WordT; T_MAX] {
+    #![allow(non_snake_case)]
     let mut L = Cow::<[WordT]>::from(key).to_vec();
     let mut S = unmixed_s::<WordT>(num_rounds);
 
@@ -277,10 +223,10 @@ fn mixed_s<
     };
 
     for _ in 0..(std::cmp::max(t(num_rounds), c) * 3) {
-        S[i] = (S[i].wrapping_add(A).wrapping_add(B)).rotate_left(3);
+        S[i] = (S[i].wrapping_add(&A).wrapping_add(&B)).rotate_left(3);
         A = S[i];
-        L[j] = (L[j].wrapping_add(A).wrapping_add(B))
-            .rotate_left(A.wrapping_add(B).to_u32().expect("word is too wide"));
+        L[j] = (L[j].wrapping_add(&A).wrapping_add(&B))
+            .rotate_left(A.wrapping_add(&B).to_u32().expect("word is too wide"));
         B = L[j];
         i = (i + 1) % t(num_rounds);
         j = (j + 1) % c;
@@ -292,8 +238,6 @@ pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rou
 where
     WordT: Word
         + Clone
-        + ConstWrappingAdd
-        + ConstZero
         + bytemuck::Pod
         + num::PrimInt
         + num::traits::WrappingAdd
@@ -310,8 +254,6 @@ pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_ro
 where
     WordT: Word
         + Clone
-        + ConstWrappingAdd
-        + ConstZero
         + bytemuck::Pod
         + num::PrimInt
         + num::traits::WrappingAdd
@@ -332,8 +274,6 @@ mod tests {
     fn test<WordT>(num_rounds: u8, key: &str, input: &str, output: &str)
     where
         WordT: Clone,
-        WordT: ConstWrappingAdd,
-        WordT: ConstZero,
         WordT: bytemuck::Pod,
         WordT: num::PrimInt,
         WordT: Word,
