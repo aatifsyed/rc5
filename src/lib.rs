@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Context};
+use zeroize::Zeroize;
 // TODO:
 // - test endianness
 // - add a compile time API for num_rounds
@@ -159,12 +160,19 @@ const fn t(num_rounds: u8) -> usize {
 }
 const T_MAX: usize = t(u8::MAX);
 
-pub struct Transcoder<WordT> {
+#[derive(zeroize::Zeroize)]
+pub struct Transcoder<WordT: zeroize::Zeroize> {
     S: [WordT; T_MAX],
     num_rounds: u8,
 }
 
-impl<WordT> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> Drop for Transcoder<WordT> {
+    fn drop(&mut self) {
+        self.zeroize()
+    }
+}
+
+impl<WordT: zeroize::Zeroize> Transcoder<WordT>
 where
     WordT: Word
         + num::PrimInt
@@ -186,7 +194,7 @@ where
         Ok(Self::new(key, num_rounds))
     }
 }
-impl<WordT> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingAdd,
 {
@@ -208,7 +216,7 @@ where
         [A, B]
     }
 }
-impl<WordT> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
