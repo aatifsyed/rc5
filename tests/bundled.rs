@@ -6,7 +6,7 @@ fn encode_a() {
     ];
     let pt = vec![0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
     let ct = vec![0x2D, 0xDC, 0x14, 0x9B, 0xCF, 0x08, 0x8B, 0x9E];
-    let res = rc5::encode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
+    let res = rc5::encode_block_rc5_32_12_16(key, pt).unwrap();
     assert_eq!(&ct[..], &res[..]);
 }
 
@@ -18,7 +18,7 @@ fn encode_b() {
     ];
     let pt = vec![0xEA, 0x02, 0x47, 0x14, 0xAD, 0x5C, 0x4D, 0x84];
     let ct = vec![0x11, 0xE4, 0x3B, 0x86, 0xD2, 0x31, 0xEA, 0x64];
-    let res = rc5::encode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), pt);
+    let res = rc5::encode_block_rc5_32_12_16(key, pt).unwrap();
     assert_eq!(&ct[..], &res[..]);
 }
 
@@ -30,7 +30,7 @@ fn decode_a() {
     ];
     let pt = vec![0x96, 0x95, 0x0D, 0xDA, 0x65, 0x4A, 0x3D, 0x62];
     let ct = vec![0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
-    let res = rc5::decode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), ct);
+    let res = rc5::decode_block_rc5_32_12_16(key, ct).unwrap();
     assert_eq!(&pt[..], &res[..]);
 }
 
@@ -42,6 +42,6 @@ fn decode_b() {
     ];
     let pt = vec![0x63, 0x8B, 0x3A, 0x5E, 0xF7, 0x2B, 0x66, 0x3F];
     let ct = vec![0xEA, 0x02, 0x47, 0x14, 0xAD, 0x5C, 0x4D, 0x84];
-    let res = rc5::decode_block_rc5_32_12_16(rc5::SecretKey::try_from(key.as_slice()).unwrap(), ct);
+    let res = rc5::decode_block_rc5_32_12_16(key, ct).unwrap();
     assert_eq!(&pt[..], &res[..]);
 }

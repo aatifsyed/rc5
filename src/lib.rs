@@ -4,11 +4,15 @@ use std::{
     borrow::Cow,
     mem::{align_of, size_of},
 };
+
+use anyhow::{anyhow, Context};
 // TODO:
 // - test endianness
-// - move as much as possible to compile time
+// - add a compile time API for num_rounds
 
-use anyhow::ensure;
+#[derive(Debug, thiserror::Error)]
+#[error("secret key length must be in range 0..=255")]
+pub struct SecretKeyTooLarge;
 
 #[derive(Debug, Clone, Copy)]
 /// Buffer guaranteed to be of a valid length for RC5
@@ -17,15 +21,14 @@ pub struct SecretKey<'a> {
 }
 
 impl<'a> TryFrom<&'a [u8]> for SecretKey<'a> {
-    type Error = anyhow::Error;
+    type Error = SecretKeyTooLarge;
 
     fn try_from(buffer: &'a [u8]) -> Result<Self, Self::Error> {
         let num_bytes = buffer.len();
-        ensure!(
-            num_bytes <= 255,
-            "secret key length of {num_bytes} is not in allowed range 0..=255"
-        );
-        Ok(Self { buffer })
+        match num_bytes {
+            0..=255 => Ok(Self { buffer }),
+            _ => Err(SecretKeyTooLarge),
+        }
     }
 }
 
@@ -111,7 +114,7 @@ impl_word!(u16, P = 0xB7E1, Q = 0x9E37);
 impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
 impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
 
-trait ConstZero {
+pub trait ConstZero {
     const ZERO: Self;
 }
 
@@ -126,7 +129,7 @@ impl ConstZero for u64 {
 }
 
 #[const_trait]
-trait ConstWrappingAdd {
+pub trait ConstWrappingAdd {
     fn wrapping_add(self, rhs: Self) -> Self;
 }
 
@@ -155,6 +158,78 @@ const fn t(num_rounds: u8) -> usize {
     2 * (num_rounds as usize + 1)
 }
 const T_MAX: usize = t(u8::MAX);
+
+pub struct Transcoder<WordT> {
+    S: [WordT; T_MAX],
+    num_rounds: u8,
+}
+
+impl<WordT> Transcoder<WordT>
+where
+    WordT: Word
+        + num::PrimInt
+        + Clone
+        + bytemuck::Pod
+        + ConstZero
+        + ConstWrappingAdd
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub,
+{
+    pub fn new(key: SecretKey, num_rounds: u8) -> Self {
+        Self {
+            S: mixed_s(key, num_rounds),
+            num_rounds,
+        }
+    }
+    pub fn try_new(key: impl AsRef<[u8]>, num_rounds: u8) -> Result<Self, SecretKeyTooLarge> {
+        let key = SecretKey::try_from(key.as_ref())?;
+        Ok(Self::new(key, num_rounds))
+    }
+}
+impl<WordT> Transcoder<WordT>
+where
+    WordT: num::PrimInt + num::traits::WrappingAdd,
+{
+    // We could overwrite plaintext in place, but the optimizer will probably notice for us, so this becomes the caller's decision
+    // Method rather than pub fn so we guarantee that we can index into S
+    pub fn encode_block(&self, plaintext: &[WordT; 2]) -> [WordT; 2] {
+        let mut A = plaintext[0].wrapping_add(&self.S[0]);
+        let mut B = plaintext[1].wrapping_add(&self.S[1]);
+
+        for i in 1..=self.num_rounds as usize {
+            A = (A ^ B)
+                .rotate_left(B.to_u32().expect("word is too wide"))
+                .wrapping_add(&self.S[2 * i]);
+            B = (B ^ A)
+                .rotate_left(A.to_u32().expect("word is too wide"))
+                .wrapping_add(&self.S[2 * i + 1]);
+        }
+
+        [A, B]
+    }
+}
+impl<WordT> Transcoder<WordT>
+where
+    WordT: num::PrimInt + num::traits::WrappingSub,
+{
+    pub fn decode_block(&self, ciphertext: &[WordT; 2]) -> [WordT; 2] {
+        let mut B = ciphertext[1];
+        let mut A = ciphertext[0];
+
+        for i in (1..=self.num_rounds as usize).rev() {
+            B = (B.wrapping_sub(&self.S[2 * i + 1]))
+                .rotate_right(A.to_u32().expect("word is too wide"))
+                ^ A;
+            A = (A.wrapping_sub(&self.S[2 * i]))
+                .rotate_right(B.to_u32().expect("word is too wide"))
+                ^ B;
+        }
+
+        B = B.wrapping_sub(&self.S[1]);
+        A = A.wrapping_sub(&self.S[0]);
+        [A, B]
+    }
+}
 
 // save a heap allocation for the s array
 // array size could be const N, but since it depends on `num_rounds`, but jumping from a runtime num_rounds (which we want) to a compile time num_rounds (which we don't want) is hard
@@ -200,70 +275,45 @@ fn mixed_s<
     S
 }
 
-// Could overwrite plaintext in place... maybe the optimizer will notice? ;)
-pub fn encode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingAdd + num::PrimInt>(
-    // so could just accept [Word; 255] here
-    S: &[WordT],
-    plaintext: &[WordT; 2],
-    num_rounds: u8,
-) -> [WordT; 2] {
-    let mut A = plaintext[0].wrapping_add(&S[0]);
-    let mut B = plaintext[1].wrapping_add(&S[1]);
-
-    for i in 1..=num_rounds as usize {
-        A = (A ^ B)
-            .rotate_left(B.to_u32().expect("word is too wide"))
-            .wrapping_add(&S[2 * i]);
-        B = (B ^ A)
-            .rotate_left(A.to_u32().expect("word is too wide"))
-            .wrapping_add(&S[2 * i + 1]);
-    }
-
-    [A, B]
-}
-
-pub fn decode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingSub + num::PrimInt>(
-    S: &[WordT],
-    ciphertext: &[WordT; 2],
-    num_rounds: u8,
-) -> [WordT; 2] {
-    let mut B = ciphertext[1];
-    let mut A = ciphertext[0];
-
-    for i in (1..=num_rounds as usize).rev() {
-        B = (B.wrapping_sub(&S[2 * i + 1])).rotate_right(A.to_u32().expect("word is too wide")) ^ A;
-        A = (A.wrapping_sub(&S[2 * i])).rotate_right(B.to_u32().expect("word is too wide")) ^ B;
-    }
-
-    B = B.wrapping_sub(&S[1]);
-    A = A.wrapping_sub(&S[0]);
-    [A, B]
-}
-
 /*
  * This function should return a cipher text for a given key and plaintext
  *
  */
-pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) -> Vec<u8> {
+pub fn encode_block_rc5_32_12_16(
+    key: impl AsRef<[u8]>,
+    plaintext: impl AsRef<[u8]>,
+) -> anyhow::Result<Vec<u8>> {
     type Word = u32;
-    let r = 12; // The number of rounds to use when encrypting data.
-
-    let S = mixed_s(key, r as _);
-    let plaintext: &[Word; 2] = bytemuck::cast_slice(plaintext.as_ref()).try_into().unwrap();
-    bytemuck::cast_slice(&encode_block(&S, plaintext, r)).to_owned()
+    let num_rounds = 12;
+    let plaintext_block: &[Word; 2] = bytemuck::try_cast_slice(plaintext.as_ref())
+        .map_err(|e| anyhow!(e))?
+        .try_into()
+        .context("invalid block length")?;
+    Ok(Transcoder::try_new(key, num_rounds)?
+        .encode_block(plaintext_block)
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect())
 }
 
 /*
  * This function should return a plaintext for a given key and ciphertext
  *
  */
-pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -> Vec<u8> {
+pub fn decode_block_rc5_32_12_16(
+    key: impl AsRef<[u8]>,
+    ciphertext: impl AsRef<[u8]>,
+) -> anyhow::Result<Vec<u8>> {
     type Word = u32;
-    let r = 12; // The number of rounds to use when encrypting data.
-
-    let S = mixed_s(key, r as _);
-    let ciphertext: &[Word; 2] = bytemuck::cast_slice(ciphertext.as_ref())
+    let num_rounds = 12; // The number of rounds to use when encrypting data.
+    let ciphertext_block: &[Word; 2] = bytemuck::try_cast_slice(ciphertext.as_ref())
+        .map_err(|e| anyhow!(e))?
         .try_into()
-        .unwrap();
-    bytemuck::cast_slice(&decode_block(&S, ciphertext, r)).to_owned()
+        .context("invalid block length")?;
+
+    Ok(Transcoder::try_new(key, num_rounds)?
+        .decode_block(ciphertext_block)
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect())
 }
