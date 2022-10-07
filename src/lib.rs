@@ -1,3 +1,4 @@
+#![allow(non_snake_case)]
 use std::{borrow::Cow, mem::size_of, num::NonZeroUsize};
 
 use anyhow::ensure;
@@ -148,26 +149,54 @@ fn make_s_array<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits
     S
 }
 
+// Could overwrite plaintext in place... maybe the optimizer will notice? ;)
+pub fn encode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingAdd + num::PrimInt>(
+    // so could just accept [Word; 255] here
+    S: &[WordT],
+    plaintext: &[WordT; 2],
+    num_rounds: u8,
+) -> [WordT; 2] {
+    let mut A = plaintext[0].wrapping_add(&S[0]);
+    let mut B = plaintext[1].wrapping_add(&S[1]);
+    for i in 1..=num_rounds as usize {
+        A = (A ^ B)
+            .rotate_left(B.to_u32().expect("word is too wide"))
+            .wrapping_add(&S[2 * i]);
+        B = (B ^ A)
+            .rotate_left(A.to_u32().expect("word is too wide"))
+            .wrapping_add(&S[2 * i + 1]);
+    }
+    [A, B]
+}
+
+pub fn decode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingSub + num::PrimInt>(
+    S: &[WordT],
+    ciphertext: &[WordT; 2],
+    num_rounds: u8,
+) -> [WordT; 2] {
+    let mut B = ciphertext[1];
+    let mut A = ciphertext[0];
+
+    for i in (1..=num_rounds as usize).rev() {
+        B = (B.wrapping_sub(&S[2 * i + 1])).rotate_right(A.to_u32().expect("word is too wide")) ^ A;
+        A = (A.wrapping_sub(&S[2 * i])).rotate_right(B.to_u32().expect("word is too wide")) ^ B;
+    }
+    B = B.wrapping_sub(&S[1]);
+    A = A.wrapping_sub(&S[0]);
+    [A, B]
+}
+
 /*
  * This function should return a cipher text for a given key and plaintext
  *
  */
 pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    const r: usize = 12; // The number of rounds to use when encrypting data.
+    let r = 12; // The number of rounds to use when encrypting data.
 
     let S = make_s_array(key, r as _);
-    let plaintext = bytemuck::cast_slice::<_, Word>(plaintext.as_ref());
-
-    let mut A = plaintext[0].wrapping_add(S[0]);
-    let mut B = plaintext[1].wrapping_add(S[1]);
-
-    for i in 1..=r {
-        A = (A ^ B).rotate_left(B).wrapping_add(S[2 * i]);
-        B = (B ^ A).rotate_left(A).wrapping_add(S[2 * i + 1]);
-    }
-
-    bytemuck::cast_slice(&[A, B]).to_owned()
+    let plaintext: &[Word; 2] = bytemuck::cast_slice(plaintext.as_ref()).try_into().unwrap();
+    bytemuck::cast_slice(&encode_block(&S, plaintext, r)).to_owned()
 }
 
 /*
@@ -176,20 +205,11 @@ pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) ->
  */
 pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -> Vec<u8> {
     type Word = u32;
-    const r: usize = 12; // The number of rounds to use when encrypting data.
+    let r = 12; // The number of rounds to use when encrypting data.
 
     let S = make_s_array(key, r as _);
-
-    let ciphertext = bytemuck::cast_slice::<_, Word>(ciphertext.as_ref());
-
-    let mut B = ciphertext[1];
-    let mut A = ciphertext[0];
-
-    for i in (1..=r).rev() {
-        B = (B.wrapping_sub(S[2 * i + 1])).rotate_right(A) ^ A;
-        A = (A.wrapping_sub(S[2 * i])).rotate_right(B) ^ B;
-    }
-    B = B.wrapping_sub(S[1]);
-    A = A.wrapping_sub(S[0]);
-    bytemuck::cast_slice(&[A, B]).to_owned()
+    let ciphertext: &[Word; 2] = bytemuck::cast_slice(ciphertext.as_ref())
+        .try_into()
+        .unwrap();
+    bytemuck::cast_slice(&decode_block(&S, ciphertext, r)).to_owned()
 }
