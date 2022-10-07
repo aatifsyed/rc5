@@ -5,8 +5,10 @@
 //!
 //! This is often written as RC5/`word size`/`num rounds`/`key length`.
 //!
-//! For one time use, use the [encode] and [decode] functions.
-//! For adapting iterators, use [IterEncoder] and [IterDecoder]
+//! For one time use, use the [encode_all] and [decode_all] functions.
+//! For adapting iterators, use [IterEncoder] and [IterDecoder].
+//! If the word size is not known at compile time, you may use the [encoder] and [decoder] functions
+//! to dispatch to an iterator adapter.
 
 // I've stuck to the names of constants in the paper where it makes sense
 // (despite the publishers apparantly charging per-letter...)
@@ -36,14 +38,18 @@ pub const MAX_KEY_LEN: usize = u8::MAX as _;
 /// // rc5/32/12/16 example from Rivest's original paper
 /// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
 /// let plaintext = hex::decode("21A5DBEE154B8F6D")?;
-/// let ciphertext = rc5::encode::<u32>(key, plaintext, 12);
+/// let ciphertext = rc5::encode_all::<u32>(key, plaintext, 12);
 /// assert_eq!(ciphertext, hex::decode("F7C013AC5B2B8952")?);
 /// # Ok(())
 /// # }
 /// ```
 /// # Panics
 /// If the key is longer than [MAX_KEY_LEN] bytes
-pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+pub fn encode_all<WordT>(
+    key: impl AsRef<[u8]>,
+    plaintext: impl AsRef<[u8]>,
+    num_rounds: u8,
+) -> Vec<u8>
 where
     WordT: Word
         + bytemuck::Pod
@@ -65,14 +71,18 @@ where
 /// // rc5/32/12/16 example from Rivest's original paper
 /// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
 /// let ciphertext = hex::decode("F7C013AC5B2B8952")?;
-/// let plaintext = rc5::decode::<u32>(key, ciphertext, 12);
+/// let plaintext = rc5::decode_all::<u32>(key, ciphertext, 12);
 /// assert_eq!(plaintext, hex::decode("21A5DBEE154B8F6D")?);
 /// # Ok(())
 /// # }
 /// ```
 /// # Panics
 /// If the key is longer than [MAX_KEY_LEN] bytes
-pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+pub fn decode_all<WordT>(
+    key: impl AsRef<[u8]>,
+    ciphertext: impl AsRef<[u8]>,
+    num_rounds: u8,
+) -> Vec<u8>
 where
     WordT: Word
         + bytemuck::Pod
@@ -362,9 +372,9 @@ mod tests {
         let key = hex::decode(key).unwrap();
         let input = hex::decode(input).unwrap();
         let output = hex::decode(output).unwrap();
-        let encoded_input = encode::<WordT>(&key, &input, num_rounds);
+        let encoded_input = encode_all::<WordT>(&key, &input, num_rounds);
         assert_eq!(output, encoded_input);
-        let decoded_output = decode::<WordT>(&key, &output, num_rounds);
+        let decoded_output = decode_all::<WordT>(&key, &output, num_rounds);
         assert_eq!(input, decoded_output);
     }
 
