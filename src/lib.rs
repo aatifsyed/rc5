@@ -283,11 +283,8 @@ where
         };
         match bytemuck::try_cast_slice(value.buffer) {
             Ok(words) => Cow::Borrowed(words),
-            Err(TargetAlignmentGreaterAndInputNotAligned) => {
-                unreachable!("alignment should fit - see implementation of sealed trait Word")
-            }
             Err(AlignmentMismatch) => unreachable!("slice not a Box or Vec"),
-            Err(OutputSliceWouldHaveSlop) => {
+            Err(OutputSliceWouldHaveSlop) | Err(TargetAlignmentGreaterAndInputNotAligned) => {
                 let b = value.buffer.len();
                 assert_ne!(
                     b, 0,
