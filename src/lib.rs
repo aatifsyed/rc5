@@ -320,7 +320,7 @@ pub trait Word: sealed::Sealed {
 }
 
 macro_rules! impl_word {
-    ($ty:ty, P = $p:expr, Q = $q:expr) => {
+    ($ty:ty, P = $p:expr, Q = $q:expr $(,)?) => {
         impl Word for $ty {
             const P: Self = $p;
             const Q: Self = $q;
@@ -333,7 +333,11 @@ impl_word!(u8, P = 0xB7, Q = 0x9F);
 impl_word!(u16, P = 0xB7E1, Q = 0x9E37);
 impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
 impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
-// impl_word!(u128, P = ???, Q = ???);
+impl_word!(
+    u128,
+    P = 0xb7e151628aed2a6abf7158809cf4f3c7, // wolfram alpha
+    Q = 0x9e3779b97f4a7c15f39cc0605cedc835,
+);
 
 mod sealed {
     pub trait Sealed {}
@@ -400,16 +404,14 @@ mod tests {
         )
     }
 
-    // TODO impl Word for u128
-    // /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
-    // #[test]
-    // fn rc5_128_28_32() {
-    //     test::<u128>(
-    //         28,
-    //         "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
-    //         "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
-    //         "ECA5910921A4F4CFDD7AD7AD20A1FCBA
-    //               068EC7A7CD752D68FE914B7FE180B440",
-    //     )
-    // }
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn rc5_128_28_32() {
+        test::<u128>(
+            28,
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+            "ECA5910921A4F4CFDD7AD7AD20A1FCBA068EC7A7CD752D68FE914B7FE180B440",
+        )
+    }
 }
