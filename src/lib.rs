@@ -25,6 +25,7 @@ use std::{
     mem::{align_of, size_of},
 };
 mod dynamic;
+mod io;
 mod iter_decoder;
 mod iter_encoder;
 pub use dynamic::{decoder, encoder, ControlBlock, ControlBlockHeader, Version, WordSize};
