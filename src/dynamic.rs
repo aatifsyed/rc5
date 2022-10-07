@@ -15,7 +15,7 @@ where
     macro_rules! iter_encoder {
         ($ty:ty) => {
             Ok(Box::new(crate::IterEncoder::new(
-                crate::Transcoder::<$ty>::new(
+                crate::BlockTranscoder::<$ty>::new(
                     crate::SecretKey::try_from(key.as_ref())?,
                     num_rounds,
                 ),
@@ -45,7 +45,7 @@ where
     macro_rules! iter_decoder {
         ($ty:ty) => {
             Ok(Box::new(crate::IterDecoder::new(
-                crate::Transcoder::<$ty>::new(
+                crate::BlockTranscoder::<$ty>::new(
                     crate::SecretKey::try_from(key.as_ref())?,
                     num_rounds,
                 ),

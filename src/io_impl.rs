@@ -12,7 +12,7 @@ fn is_done(reader: &mut impl io::BufRead) -> io::Result<bool> {
 }
 
 pub struct IoDecoder<WordT: zeroize::Zeroize, InnerT> {
-    transcoder: crate::Transcoder<WordT>,
+    transcoder: crate::BlockTranscoder<WordT>,
     inner: InnerT,
 }
 
@@ -24,7 +24,7 @@ impl<WordT: zeroize::Zeroize, InnerT> IoDecoder<WordT, io::BufReader<InnerT>>
 where
     InnerT: io::Read,
 {
-    pub fn new_reader(transcoder: crate::Transcoder<WordT>, inner: InnerT) -> Self {
+    pub fn new_reader(transcoder: crate::BlockTranscoder<WordT>, inner: InnerT) -> Self {
         Self {
             transcoder,
             inner: io::BufReader::with_capacity(Self::BLOCK_SIZE, inner),
@@ -36,7 +36,7 @@ impl<WordT: zeroize::Zeroize, InnerT> IoDecoder<WordT, io::BufWriter<InnerT>>
 where
     InnerT: io::Write,
 {
-    pub fn new_writer(transcoder: crate::Transcoder<WordT>, inner: InnerT) -> Self {
+    pub fn new_writer(transcoder: crate::BlockTranscoder<WordT>, inner: InnerT) -> Self {
         Self {
             transcoder,
             inner: io::BufWriter::with_capacity(Self::BLOCK_SIZE, inner),
@@ -88,12 +88,12 @@ where
 }
 
 pub struct IoEncoder<WordT: zeroize::Zeroize, InnerT> {
-    transcoder: crate::Transcoder<WordT>,
+    transcoder: crate::BlockTranscoder<WordT>,
     inner: InnerT,
 }
 
 impl<WordT: zeroize::Zeroize, InnerT> IoEncoder<WordT, InnerT> {
-    pub fn new(transcoder: crate::Transcoder<WordT>, inner: InnerT) -> Self {
+    pub fn new(transcoder: crate::BlockTranscoder<WordT>, inner: InnerT) -> Self {
         Self { transcoder, inner }
     }
 }
@@ -140,7 +140,7 @@ mod tests {
 
         let mut decoded_output = Vec::new();
         IoDecoder::new_reader(
-            crate::Transcoder::<u32>::try_new(key, num_rounds).unwrap(),
+            crate::BlockTranscoder::<u32>::try_new(key, num_rounds).unwrap(),
             &output[..],
         )
         .read_to_end(&mut decoded_output)

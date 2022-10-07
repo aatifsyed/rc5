@@ -5,7 +5,7 @@ use std::{
     mem::size_of,
 };
 
-use crate::Transcoder;
+use crate::BlockTranscoder;
 
 /// An iterator adaptor that decodes bytes that pass through it
 /// ```
@@ -14,7 +14,7 @@ use crate::Transcoder;
 /// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
 /// let ciphertext = hex::decode("F7C013AC5B2B8952")?;
 /// let plaintext = rc5::IterDecoder::new(
-///     rc5::Transcoder::<u32>::try_new(key, 12)?,
+///     rc5::BlockTranscoder::<u32>::try_new(key, 12)?,
 ///     &ciphertext
 /// ).collect::<Vec<_>>();
 /// assert_eq!(plaintext, hex::decode("21A5DBEE154B8F6D")?);
@@ -44,7 +44,10 @@ impl<WordT: zeroize::Zeroize, InnerT> IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
-    pub fn new(transcoder: Transcoder<WordT>, inner: impl IntoIterator<IntoIter = InnerT>) -> Self {
+    pub fn new(
+        transcoder: BlockTranscoder<WordT>,
+        inner: impl IntoIterator<IntoIter = InnerT>,
+    ) -> Self {
         Self {
             word_encoder: WordDecoder::new(transcoder, inner),
             buffer: Default::default(),
@@ -69,7 +72,7 @@ where
 }
 
 struct WordDecoder<WordT: zeroize::Zeroize, InnerT> {
-    transcoder: Transcoder<WordT>,
+    transcoder: BlockTranscoder<WordT>,
     // reuse allocation
     buffer: Vec<u8>,
     inner: Fuse<InnerT>,
@@ -81,7 +84,10 @@ impl<WordT: zeroize::Zeroize, InnerT> WordDecoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
-    fn new(transcoder: Transcoder<WordT>, inner: impl IntoIterator<IntoIter = InnerT>) -> Self {
+    fn new(
+        transcoder: BlockTranscoder<WordT>,
+        inner: impl IntoIterator<IntoIter = InnerT>,
+    ) -> Self {
         Self {
             transcoder,
             buffer: Vec::new(),
@@ -128,7 +134,7 @@ where
 /// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
 /// let plaintext = hex::decode("21A5DBEE154B8F6D")?;
 /// let ciphertext = rc5::IterEncoder::new(
-///     rc5::Transcoder::<u32>::try_new(key, 12)?,
+///     rc5::BlockTranscoder::<u32>::try_new(key, 12)?,
 ///     &plaintext
 /// ).collect::<Vec<_>>();
 /// assert_eq!(ciphertext, hex::decode("F7C013AC5B2B8952")?);
@@ -158,7 +164,10 @@ impl<WordT: zeroize::Zeroize, InnerT> IterEncoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
-    pub fn new(transcoder: Transcoder<WordT>, inner: impl IntoIterator<IntoIter = InnerT>) -> Self {
+    pub fn new(
+        transcoder: BlockTranscoder<WordT>,
+        inner: impl IntoIterator<IntoIter = InnerT>,
+    ) -> Self {
         Self {
             word_encoder: WordEncoder::new(transcoder, inner),
             buffer: Default::default(),
@@ -183,7 +192,7 @@ where
 }
 
 struct WordEncoder<WordT: zeroize::Zeroize, InnerT> {
-    transcoder: Transcoder<WordT>,
+    transcoder: BlockTranscoder<WordT>,
     // reuse allocation
     buffer: Vec<u8>,
     inner: Fuse<InnerT>,
@@ -194,7 +203,10 @@ impl<WordT: zeroize::Zeroize, InnerT> WordEncoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
-    fn new(transcoder: Transcoder<WordT>, inner: impl IntoIterator<IntoIter = InnerT>) -> Self {
+    fn new(
+        transcoder: BlockTranscoder<WordT>,
+        inner: impl IntoIterator<IntoIter = InnerT>,
+    ) -> Self {
         Self {
             transcoder,
             buffer: Vec::new(),

@@ -66,7 +66,7 @@ where
         + zeroize::Zeroize,
 {
     IterEncoder::new(
-        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
+        BlockTranscoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         plaintext.as_ref(),
     )
     .collect()
@@ -99,7 +99,7 @@ where
         + zeroize::Zeroize,
 {
     IterDecoder::new(
-        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
+        BlockTranscoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         ciphertext.as_ref(),
     )
     .collect()
@@ -165,7 +165,7 @@ fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::Wra
     S
 }
 
-impl<WordT: zeroize::Zeroize> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> BlockTranscoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingAdd,
 {
@@ -190,7 +190,7 @@ where
         [A, B]
     }
 }
-impl<WordT: zeroize::Zeroize> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> BlockTranscoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
@@ -221,19 +221,19 @@ where
 /// - the rust compiler makes no guarantees about constant time operations.
 #[derive(Clone)]
 #[allow(non_snake_case)]
-pub struct Transcoder<WordT: zeroize::Zeroize> {
+pub struct BlockTranscoder<WordT: zeroize::Zeroize> {
     // TODO: newtype so can use SmallVec + Zeroize here
     S: zeroize::Zeroizing<Vec<WordT>>,
     num_rounds: u8,
 }
 
-impl<WordT: zeroize::Zeroize> fmt::Debug for Transcoder<WordT> {
+impl<WordT: zeroize::Zeroize> fmt::Debug for BlockTranscoder<WordT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Transcoder").finish_non_exhaustive()
     }
 }
 
-impl<WordT> Transcoder<WordT>
+impl<WordT> BlockTranscoder<WordT>
 where
     WordT: Word
         + zeroize::Zeroize
