@@ -1,5 +1,9 @@
 #![allow(non_snake_case)]
-use std::{borrow::Cow, mem::size_of, num::NonZeroUsize};
+#![feature(const_for, const_mut_refs, const_trait_impl)]
+use std::{mem::size_of, num::NonZeroUsize};
+// TODO:
+// - test endianness
+// - move as much as possible to compile time
 
 use anyhow::ensure;
 
@@ -19,26 +23,6 @@ impl<'a> TryFrom<&'a [u8]> for SecretKey<'a> {
             "secret key length of {num_bytes} is not in allowed range 0..=255"
         );
         Ok(Self { buffer })
-    }
-}
-
-pub struct SecretKeyWords<'a, WordT>
-where
-    [WordT]: ToOwned,
-{
-    buffer: Cow<'a, [WordT]>,
-}
-
-impl<'a, WordT: bytemuck::Pod> TryFrom<SecretKey<'a>> for SecretKeyWords<'a, WordT> {
-    type Error = bytemuck::PodCastError;
-
-    fn try_from(value: SecretKey<'a>) -> Result<Self, Self::Error> {
-        // TODO: could probably have Cow<[WordT]> and lengthen in the case that the buffer doesn't fit a whole number of words
-        // have I just not read the spec carefully enough?
-        let buffer = bytemuck::try_cast_slice(value.buffer)?;
-        Ok(Self {
-            buffer: Cow::Borrowed(buffer),
-        })
     }
 }
 
@@ -83,6 +67,39 @@ impl Word for u64 {
     const Q: Self = 0x9E3779B97F4A7C15;
 }
 
+trait ConstZero {
+    const ZERO: Self;
+}
+
+impl ConstZero for u16 {
+    const ZERO: Self = 0;
+}
+impl ConstZero for u32 {
+    const ZERO: Self = 0;
+}
+impl ConstZero for u64 {
+    const ZERO: Self = 0;
+}
+
+#[const_trait]
+trait ConstWrappingAdd {
+    fn wrapping_add(self, rhs: Self) -> Self;
+}
+
+macro_rules! impl_const_wrapping_add {
+    ($ty:ty) => {
+        impl const ConstWrappingAdd for $ty {
+            fn wrapping_add(self, rhs: Self) -> Self {
+                <$ty>::wrapping_add(self, rhs)
+            }
+        }
+    };
+}
+
+impl_const_wrapping_add!(u16);
+impl_const_wrapping_add!(u32);
+impl_const_wrapping_add!(u64);
+
 mod sealed {
     pub trait Sealed {}
     impl Sealed for u16 {}
@@ -90,15 +107,22 @@ mod sealed {
     impl Sealed for u64 {}
 }
 
-// could we just have a static table for num_rounds = 255 for each type? probably - would save us allocating
-fn make_constant_working_array<WordT: Word + num::Zero + Clone + num::traits::WrappingAdd>(
+const fn t(num_rounds: u8) -> usize {
+    2 * (num_rounds as usize + 1)
+}
+const T_MAX: usize = t(u8::MAX);
+
+// save a heap allocation for the s array
+// array size could be const N, but since it depends on `num_rounds`, jumping from a runtime num_rounds (which we want) to a compile time num_rounds (which we don't want) is hard
+const fn prepare_s_array<WordT: Word + ConstZero + Copy + ~const ConstWrappingAdd>(
     num_rounds: u8,
-) -> Vec<WordT> {
-    let t = 2 * (usize::from(num_rounds) + 1);
-    let mut S = vec![WordT::zero(); t];
+) -> [WordT; T_MAX] {
+    let mut S = [WordT::ZERO; T_MAX];
     S[0] = WordT::P;
-    for i in 1..t {
-        S[i] = S[i - 1].wrapping_add(&WordT::Q)
+    let mut i = 1;
+    while i < t(num_rounds) {
+        S[i] = S[i - 1].wrapping_add(WordT::Q);
+        i += 1;
     }
     S
 }
@@ -122,12 +146,14 @@ fn make_secret_key_working_array<WordT: num::Zero + Clone + bytemuck::Pod>(
     L
 }
 
-fn make_s_array<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
+fn mix_secret_key_into_s_array<
+    WordT: Word + num::PrimInt + Clone + bytemuck::Pod + ConstZero + ~const ConstWrappingAdd,
+>(
     key: SecretKey,
     num_rounds: u8,
 ) -> Vec<WordT> {
     let mut L = make_secret_key_working_array::<WordT>(key);
-    let mut S = make_constant_working_array::<WordT>(num_rounds);
+    let mut S = prepare_s_array::<WordT>(num_rounds);
 
     let (mut i, mut j) = (0, 0);
     let (mut A, mut B) = (WordT::zero(), WordT::zero());
@@ -135,18 +161,17 @@ fn make_s_array<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits
     let c = NonZeroUsize::new(L.len())
         .unwrap_or(NonZeroUsize::new(1).unwrap())
         .get();
-    let t = 2 * (num_rounds as usize + 1);
 
-    for _ in 0..(std::cmp::max(t, c) * 3) {
-        S[i] = (S[i].wrapping_add(&A).wrapping_add(&B)).rotate_left(3);
+    for _ in 0..(std::cmp::max(t(num_rounds), c) * 3) {
+        S[i] = (S[i].wrapping_add(A).wrapping_add(B)).rotate_left(3);
         A = S[i];
-        L[j] = (L[j].wrapping_add(&A).wrapping_add(&B))
-            .rotate_left(A.wrapping_add(&B).to_u32().expect("word is too wide"));
+        L[j] = (L[j].wrapping_add(A).wrapping_add(B))
+            .rotate_left(A.wrapping_add(B).to_u32().expect("word is too wide"));
         B = L[j];
-        i = (i + 1) % t;
+        i = (i + 1) % t(num_rounds);
         j = (j + 1) % c;
     }
-    S
+    S.into()
 }
 
 // Could overwrite plaintext in place... maybe the optimizer will notice? ;)
@@ -158,6 +183,7 @@ pub fn encode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingAdd + n
 ) -> [WordT; 2] {
     let mut A = plaintext[0].wrapping_add(&S[0]);
     let mut B = plaintext[1].wrapping_add(&S[1]);
+
     for i in 1..=num_rounds as usize {
         A = (A ^ B)
             .rotate_left(B.to_u32().expect("word is too wide"))
@@ -166,6 +192,7 @@ pub fn encode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingAdd + n
             .rotate_left(A.to_u32().expect("word is too wide"))
             .wrapping_add(&S[2 * i + 1]);
     }
+
     [A, B]
 }
 
@@ -181,6 +208,7 @@ pub fn decode_block<WordT: Word + ToOwned + Clone + num::traits::WrappingSub + n
         B = (B.wrapping_sub(&S[2 * i + 1])).rotate_right(A.to_u32().expect("word is too wide")) ^ A;
         A = (A.wrapping_sub(&S[2 * i])).rotate_right(B.to_u32().expect("word is too wide")) ^ B;
     }
+
     B = B.wrapping_sub(&S[1]);
     A = A.wrapping_sub(&S[0]);
     [A, B]
@@ -194,7 +222,7 @@ pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) ->
     type Word = u32;
     let r = 12; // The number of rounds to use when encrypting data.
 
-    let S = make_s_array(key, r as _);
+    let S = mix_secret_key_into_s_array(key, r as _);
     let plaintext: &[Word; 2] = bytemuck::cast_slice(plaintext.as_ref()).try_into().unwrap();
     bytemuck::cast_slice(&encode_block(&S, plaintext, r)).to_owned()
 }
@@ -207,7 +235,7 @@ pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -
     type Word = u32;
     let r = 12; // The number of rounds to use when encrypting data.
 
-    let S = make_s_array(key, r as _);
+    let S = mix_secret_key_into_s_array(key, r as _);
     let ciphertext: &[Word; 2] = bytemuck::cast_slice(ciphertext.as_ref())
         .try_into()
         .unwrap();
