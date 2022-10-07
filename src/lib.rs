@@ -18,6 +18,35 @@ impl<'a> TryFrom<&'a [u8]> for SecretKey<'a> {
     }
 }
 
+// Seal the trait because I am *not* doing arbitrary bit width arithmetic.
+// Could be persuaded once `awint` and `num` are better friends.
+pub trait Word: sealed::Sealed {
+    // Ideally this would be `const fn P<T>() -> T` but float arith is not allowed in consts yet
+    /// A magic constant
+    const P: Self;
+    /// A magic constant
+    const Q: Self;
+}
+impl Word for u16 {
+    const P: Self = 0xB7E1;
+    const Q: Self = 0x9E37;
+}
+impl Word for u32 {
+    const P: Self = 0xB7E15163;
+    const Q: Self = 0x9E3779B9;
+}
+impl Word for u64 {
+    const P: Self = 0xB7E151628AED2A6B;
+    const Q: Self = 0x9E3779B97F4A7C15;
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+}
+
 /*
  * This function should return a cipher text for a given key and plaintext
  *
