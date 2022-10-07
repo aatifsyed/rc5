@@ -25,6 +25,7 @@ mod iter_decoder;
 mod iter_encoder;
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
+use smallvec::{smallvec, SmallVec};
 
 pub const MAX_KEY_LEN: usize = 255;
 
@@ -104,9 +105,9 @@ const fn t(num_rounds: u8) -> usize {
 // and jumping from runtime num_rounds to compile time will be a pain
 fn unmixed_s<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
     num_rounds: u8,
-) -> Vec<WordT> {
+) -> SmallVec<[WordT; 20]> {
     #![allow(non_snake_case)]
-    let mut S = vec![WordT::zero(); t(num_rounds)];
+    let mut S: SmallVec<[WordT; 20]> = smallvec![WordT::zero(); t(num_rounds)];
     S[0] = WordT::P;
     let mut i = 1;
     while i < t(num_rounds) {
@@ -120,7 +121,7 @@ fn unmixed_s<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
 fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
     key: SecretKey,
     num_rounds: u8,
-) -> Vec<WordT> {
+) -> SmallVec<[WordT; 20]> {
     #![allow(non_snake_case)]
     // The secret key as an array of words, zero padded if there is any slack
     let mut L = Cow::<[WordT]>::from(key).to_vec();
@@ -203,6 +204,7 @@ where
 #[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct Transcoder<WordT: zeroize::Zeroize> {
+    // TODO: newtype so can use SmallVec + Zeroize here
     S: zeroize::Zeroizing<Vec<WordT>>,
     num_rounds: u8,
 }
@@ -225,7 +227,7 @@ where
 {
     pub fn new(key: SecretKey, num_rounds: u8) -> Self {
         Self {
-            S: zeroize::Zeroizing::new(mixed_s(key, num_rounds)),
+            S: zeroize::Zeroizing::new(mixed_s(key, num_rounds).to_vec()),
             num_rounds,
         }
     }
