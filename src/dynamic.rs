@@ -135,6 +135,7 @@ pub enum WordSize {
 }
 
 impl<'a> TryFrom<&'a [u8]> for &'a ControlBlock {
+    // TODO thiserror
     type Error = anyhow::Error;
 
     fn try_from(value: &'a [u8]) -> Result<Self, Self::Error> {

@@ -73,6 +73,7 @@ struct WordDecoder<WordT: zeroize::Zeroize, InnerT> {
     // reuse allocation
     buffer: Vec<u8>,
     inner: Fuse<InnerT>,
+    // todo random padding (CBC?)
     pad_with: u8,
 }
 
