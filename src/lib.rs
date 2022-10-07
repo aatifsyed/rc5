@@ -43,8 +43,12 @@ pub const MAX_KEY_LEN: usize = 255;
 /// If the key is longer than [MAX_KEY_LEN] bytes
 pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
 where
-    WordT:
-        Word + bytemuck::Pod + num::PrimInt + num::traits::WrappingAdd + num::traits::WrappingSub,
+    WordT: Word
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub
+        + zeroize::Zeroize,
 {
     IterEncoder::new(
         Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
@@ -68,8 +72,12 @@ where
 /// If the key is longer than [MAX_KEY_LEN] bytes
 pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
 where
-    WordT:
-        Word + bytemuck::Pod + num::PrimInt + num::traits::WrappingAdd + num::traits::WrappingSub,
+    WordT: Word
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub
+        + zeroize::Zeroize,
 {
     IterDecoder::new(
         Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
@@ -138,7 +146,7 @@ fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::Wra
     S
 }
 
-impl<WordT> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingAdd,
 {
@@ -163,7 +171,7 @@ where
         [A, B]
     }
 }
-impl<WordT> Transcoder<WordT>
+impl<WordT: zeroize::Zeroize> Transcoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
@@ -192,14 +200,14 @@ where
 /// Implements [zeroize::Zeroize], so you can wrap in [zeroize::Zeroizing] to clear the key on [Drop].
 /// In general, this implementation is *not* robust to side-channel attacks
 /// - the rust compiler makes no guarantees about constant time operations.
-#[derive(Clone, zeroize::Zeroize)]
+#[derive(Clone)]
 #[allow(non_snake_case)]
-pub struct Transcoder<WordT> {
-    S: Vec<WordT>,
+pub struct Transcoder<WordT: zeroize::Zeroize> {
+    S: zeroize::Zeroizing<Vec<WordT>>,
     num_rounds: u8,
 }
 
-impl<WordT> fmt::Debug for Transcoder<WordT> {
+impl<WordT: zeroize::Zeroize> fmt::Debug for Transcoder<WordT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Transcoder").finish_non_exhaustive()
     }
@@ -208,6 +216,7 @@ impl<WordT> fmt::Debug for Transcoder<WordT> {
 impl<WordT> Transcoder<WordT>
 where
     WordT: Word
+        + zeroize::Zeroize
         + num::PrimInt
         + Clone
         + bytemuck::Pod
@@ -216,7 +225,7 @@ where
 {
     pub fn new(key: SecretKey, num_rounds: u8) -> Self {
         Self {
-            S: mixed_s(key, num_rounds),
+            S: zeroize::Zeroizing::new(mixed_s(key, num_rounds)),
             num_rounds,
         }
     }
@@ -336,11 +345,12 @@ mod tests {
 
     fn test<WordT>(num_rounds: u8, key: &str, input: &str, output: &str)
     where
-        WordT: bytemuck::Pod,
-        WordT: num::PrimInt,
-        WordT: Word,
-        WordT: num::traits::WrappingAdd,
-        WordT: num::traits::WrappingSub,
+        WordT: bytemuck::Pod
+            + num::PrimInt
+            + Word
+            + num::traits::WrappingAdd
+            + num::traits::WrappingSub
+            + zeroize::Zeroize,
     {
         let key = hex::decode(key).unwrap();
         let input = hex::decode(input).unwrap();

@@ -22,25 +22,25 @@ use crate::Transcoder;
 /// # }
 /// ```
 // TODO API could use a bit of smoothening
-pub struct IterDecoder<WordT, InnerT> {
+pub struct IterDecoder<WordT: zeroize::Zeroize, InnerT> {
     word_encoder: WordDecoder<WordT, InnerT>,
     buffer: VecDeque<u8>,
 }
 
-impl<'a, WordT, InnerT> FusedIterator for IterDecoder<WordT, InnerT>
+impl<'a, WordT: zeroize::Zeroize, InnerT> FusedIterator for IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator<Item = &'a u8>,
     WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
 {
 }
 
-impl<WordT, InnerT> fmt::Debug for IterDecoder<WordT, InnerT> {
+impl<WordT: zeroize::Zeroize, InnerT> fmt::Debug for IterDecoder<WordT, InnerT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Decoder").finish_non_exhaustive()
     }
 }
 
-impl<WordT, InnerT> IterDecoder<WordT, InnerT>
+impl<WordT: zeroize::Zeroize, InnerT> IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
@@ -52,7 +52,7 @@ where
     }
 }
 
-impl<'a, WordT, InnerT> Iterator for IterDecoder<WordT, InnerT>
+impl<'a, WordT: zeroize::Zeroize, InnerT> Iterator for IterDecoder<WordT, InnerT>
 where
     InnerT: Iterator<Item = &'a u8>,
     WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
@@ -68,7 +68,7 @@ where
     }
 }
 
-struct WordDecoder<WordT, InnerT> {
+struct WordDecoder<WordT: zeroize::Zeroize, InnerT> {
     transcoder: Transcoder<WordT>,
     // reuse allocation
     buffer: Vec<u8>,
@@ -76,7 +76,7 @@ struct WordDecoder<WordT, InnerT> {
     pad_with: u8,
 }
 
-impl<WordT, InnerT> WordDecoder<WordT, InnerT>
+impl<WordT: zeroize::Zeroize, InnerT> WordDecoder<WordT, InnerT>
 where
     InnerT: Iterator,
 {
@@ -90,7 +90,7 @@ where
     }
 }
 
-impl<'a, WordT, InnerT> Iterator for WordDecoder<WordT, InnerT>
+impl<'a, WordT: zeroize::Zeroize, InnerT> Iterator for WordDecoder<WordT, InnerT>
 where
     InnerT: Iterator<Item = &'a u8>,
     WordT: bytemuck::Pod + num::PrimInt + num::traits::WrappingSub,
