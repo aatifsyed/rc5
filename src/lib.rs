@@ -7,7 +7,7 @@
 //!
 //! For one time use, use the [encode_all] and [decode_all] functions.
 //! For adapting iterators, use [IterEncoder] and [IterDecoder].
-//! If the word size is not known at compile time, you may use the [encoder] and [decoder] functions
+//! If the word size is not known at compile time, you may use the [iter::encoder] and [iter::decoder] functions
 //! to dispatch to an iterator adapter.
 
 // I've stuck to the names of constants in the paper where it makes sense
@@ -28,9 +28,14 @@ mod dynamic;
 mod io;
 mod iter_decoder;
 mod iter_encoder;
-pub use dynamic::{decoder, encoder, ControlBlock, ControlBlockHeader, Version, WordSize};
+pub use dynamic::{ControlBlock, ControlBlockHeader, Version, WordSize};
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
+
+pub mod iter {
+    pub use crate::dynamic::{decoder, encoder};
+}
+
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
 
 /// rc5 encode the given `plaintext`.
