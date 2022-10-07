@@ -16,6 +16,7 @@
 //   lots of potential (particularly on nightly) for num_rounds, S etc being compile time
 // - io::{Read, Write} adapters
 
+use smallvec::{smallvec, SmallVec};
 use std::{
     borrow::Cow,
     fmt,
@@ -24,10 +25,9 @@ use std::{
 mod control_block;
 mod iter_decoder;
 mod iter_encoder;
+pub use control_block::{ControlBlock, ControlBlockHeader, Version, Width};
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
-use smallvec::{smallvec, SmallVec};
-
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
 
 /// rc5 encode the given `plaintext`.

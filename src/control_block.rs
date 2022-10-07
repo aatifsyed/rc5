@@ -2,6 +2,7 @@ use std::mem::{size_of, size_of_val};
 
 use anyhow::ensure;
 
+/// The proposed representation of RC5 encryption parameters on the wire
 #[derive(Debug, PartialEq, Eq)]
 #[repr(packed)]
 pub struct ControlBlock {
