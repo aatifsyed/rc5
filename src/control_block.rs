@@ -9,6 +9,37 @@ pub struct ControlBlock {
     pub key: [u8],
 }
 
+impl ControlBlock {
+    // oh we love to wrangle lifetimes
+    pub fn encoder<'inner, 'iter, InnerT>(
+        &self,
+        inner: InnerT,
+    ) -> Box<dyn Iterator<Item = u8> + 'inner>
+    where
+        InnerT: 'inner,
+        InnerT: IntoIterator<Item = &'iter u8>,
+    {
+        macro_rules! iter_encoder {
+            ($ty:ty) => {
+                Box::new(crate::IterEncoder::new(
+                    crate::Transcoder::<u8>::new(
+                        crate::SecretKey { buffer: &self.key },
+                        self.header.num_rounds,
+                    ),
+                    inner,
+                ))
+            };
+        }
+        match self.header.bits_per_word {
+            Width::_8 => iter_encoder!(u8),
+            Width::_16 => iter_encoder!(u16),
+            Width::_32 => iter_encoder!(u32),
+            Width::_64 => iter_encoder!(u64),
+            Width::_128 => iter_encoder!(u128),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(packed)]
 pub struct ControlBlockHeader {
@@ -122,5 +153,70 @@ mod tests {
             }
         );
         assert_eq!(control_block.key, [0xAA]);
+    }
+
+    fn test<T>(num_rounds: u8, key: &str, input: &str, output: &str) {
+        let key = hex::decode(key).unwrap();
+        let bits_per_word = size_of::<T>() * 8;
+        let input = hex::decode(input).unwrap();
+        let output = hex::decode(output).unwrap();
+
+        let hex_encoded = format!(
+            "{version:02x?}{bits_per_word:02x?}{num_rounds:02x?}{key_length:02x?}{key}",
+            version = Version::_1 as u8,
+            key_length = key.len(),
+            key = hex::encode(key),
+        );
+
+        let backing_storage = hex::decode(hex_encoded).unwrap();
+        let control_block = <&ControlBlock>::try_from(&backing_storage[..]).unwrap();
+
+        let encoded_input = control_block.encoder(&input[..]).collect::<Vec<_>>();
+        assert_eq!(encoded_input, output);
+    }
+
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn test_rc5_8_12_4() {
+        test::<u8>(12, "00010203", "0001", "212A")
+    }
+
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn test_rc5_16_16_8() {
+        test::<u16>(16, "0001020304050607", "00010203", "23A8D72E")
+    }
+
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn test_rc5_32_20_16() {
+        test::<u32>(
+            20,
+            "000102030405060708090A0B0C0D0E0F",
+            "0001020304050607",
+            "2A0EDC0E9431FF73",
+        )
+    }
+
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn test_rc5_64_24_24() {
+        test::<u64>(
+            24,
+            "000102030405060708090A0B0C0D0E0F1011121314151617",
+            "000102030405060708090A0B0C0D0E0F",
+            "A46772820EDBCE0235ABEA32AE7178DA",
+        )
+    }
+
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn rc5_128_28_32() {
+        test::<u128>(
+            28,
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+            "ECA5910921A4F4CFDD7AD7AD20A1FCBA068EC7A7CD752D68FE914B7FE180B440",
+        )
     }
 }
