@@ -286,6 +286,59 @@ fn mixed_s<
     S
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// vectors from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    fn test<WordT>(num_rounds: u8, key: &str, input: &str, output: &str)
+    where
+        WordT: Clone,
+        WordT: ConstWrappingAdd,
+        WordT: ConstZero,
+        WordT: bytemuck::Pod,
+        WordT: num::PrimInt,
+        WordT: Word,
+        WordT: num::traits::WrappingAdd,
+        WordT: num::traits::WrappingSub,
+    {
+        let key = hex::decode(key).unwrap();
+        let input = hex::decode(input).unwrap();
+        let output = hex::decode(output).unwrap();
+        let expected = Encoder::new(
+            Transcoder::<WordT>::try_new(key, num_rounds).unwrap(),
+            &input,
+        )
+        .collect::<Vec<u8>>();
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_rc5_16_16_8() {
+        test::<u16>(16, "0001020304050607", "00010203", "23A8D72E")
+    }
+
+    #[test]
+    fn test_rc5_32_20_16() {
+        test::<u32>(
+            20,
+            "000102030405060708090A0B0C0D0E0F",
+            "0001020304050607",
+            "2A0EDC0E9431FF73",
+        )
+    }
+
+    #[test]
+    fn test_rc5_64_24_24() {
+        test::<u64>(
+            24,
+            "000102030405060708090A0B0C0D0E0F1011121314151617",
+            "000102030405060708090A0B0C0D0E0F",
+            "A46772820EDBCE0235ABEA32AE7178DA",
+        )
+    }
+}
+
 /*
  * This function should return a cipher text for a given key and plaintext
  *
