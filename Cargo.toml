@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.65"
 bytemuck = "1.12.1"
+libmath = "0.2.1"
 num = "0.4.0"
