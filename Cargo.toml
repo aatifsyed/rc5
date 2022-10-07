@@ -13,4 +13,5 @@ thiserror = "1.0.37"
 zeroize = { version = "1.5.7", features = ["derive"] }
 
 [dev-dependencies]
+anyhow = "1.0.65"
 hex = "0.4.3"

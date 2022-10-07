@@ -8,6 +8,20 @@ use std::{
 use crate::Transcoder;
 
 /// An iterator adaptor that encodes bytes that pass through it
+/// ```
+/// # fn main() -> anyhow::Result<()> {
+/// // rc5/32/12/16 example from Rivest's original paper
+/// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
+/// let plaintext = hex::decode("21A5DBEE154B8F6D")?;
+/// let ciphertext = rc5::IterEncoder::new(
+///     rc5::Transcoder::<u32>::try_new(key, 12)?,
+///     &plaintext
+/// ).collect::<Vec<_>>();
+/// assert_eq!(ciphertext, hex::decode("F7C013AC5B2B8952")?);
+/// # Ok(())
+/// # }
+/// ```
+// TODO API could use a bit of smoothening
 pub struct IterEncoder<WordT, InnerT> {
     word_encoder: WordEncoder<WordT, InnerT>,
     buffer: VecDeque<u8>,

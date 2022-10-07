@@ -6,7 +6,7 @@
 //! This is often written as RC5/`word size`/`num rounds`/`key length`.
 //!
 //! For one time use, use the [encode] and [decode] functions.
-//! For adapting iterators, use [Encoder] and [Decoder]
+//! For adapting iterators, use [IterEncoder] and [IterDecoder]
 
 // I've stuck to the names of constants in the paper where it makes sense
 // (despite the publishers apparantly charging per-letter...)
@@ -14,6 +14,7 @@
 // - test on a little-endian machine
 // - add a compile time API - see the commit history for some of this being `const fn` etc
 //   lots of potential (particularly on nightly) for num_rounds, S etc being compile time
+// - io::{Read, Write} adapters
 
 use std::{
     borrow::Cow,
