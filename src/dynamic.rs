@@ -2,7 +2,22 @@ use std::mem::{size_of, size_of_val};
 
 use anyhow::ensure;
 
-/// Create an encoder with a runtime word size
+/// Create an encoder with a runtime word size.
+/// ```
+/// # fn main() -> anyhow::Result<()> {
+/// // rc5/32/12/16 example from Rivest's original paper
+/// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
+/// let plaintext = hex::decode("21A5DBEE154B8F6D")?;
+/// let ciphertext = rc5::iter::encoder(
+///     rc5::WordSize::_32,
+///     12,
+///     key,
+///     &plaintext
+/// )?.collect::<Vec<_>>();
+/// assert_eq!(ciphertext, hex::decode("F7C013AC5B2B8952")?);
+/// # Ok(())
+/// # }
+/// ```
 pub fn encoder<'wrapped, 'byte, WrappedT>(
     word_size: WordSize,
     num_rounds: u8,
@@ -32,7 +47,22 @@ where
     }
 }
 
-/// Create a decoder with a runtime word size
+/// Create a decoder with a runtime word size.
+/// ```
+/// # fn main() -> anyhow::Result<()> {
+/// // rc5/32/12/16 example from Rivest's original paper
+/// let key = hex::decode("915F4619BE41B2516355A50110A9CE91")?;
+/// let ciphertext = hex::decode("F7C013AC5B2B8952")?;
+/// let plaintext = rc5::iter::decoder(
+///     rc5::WordSize::_32,
+///     12,
+///     key,
+///     &ciphertext
+/// )?.collect::<Vec<_>>();
+/// assert_eq!(plaintext, hex::decode("21A5DBEE154B8F6D")?);
+/// # Ok(())
+/// # }
+/// ```
 pub fn decoder<'wrapped, 'byte, WrappedT>(
     word_size: WordSize,
     num_rounds: u8,
