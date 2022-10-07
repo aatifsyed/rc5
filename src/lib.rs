@@ -329,7 +329,7 @@ macro_rules! impl_word {
     };
 }
 
-// impl_word!(u8, P = ???, Q = ???);
+impl_word!(u8, P = 0xB7, Q = 0x9F);
 impl_word!(u16, P = 0xB7E1, Q = 0x9E37);
 impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
 impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
@@ -337,9 +337,11 @@ impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
 
 mod sealed {
     pub trait Sealed {}
+    impl Sealed for u8 {}
     impl Sealed for u16 {}
     impl Sealed for u32 {}
     impl Sealed for u64 {}
+    impl Sealed for u128 {}
 }
 
 #[cfg(test)]
@@ -364,12 +366,11 @@ mod tests {
         assert_eq!(input, decoded_output);
     }
 
-    // TODO impl Word for u8
-    // /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
-    // #[test]
-    // fn test_rc5_8_12_4() {
-    //     test::<u8>(12, "00010203", "0001", "212A")
-    // }
+    /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
+    #[test]
+    fn test_rc5_8_12_4() {
+        test::<u8>(12, "00010203", "0001", "212A")
+    }
 
     /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
     #[test]
