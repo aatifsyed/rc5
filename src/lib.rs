@@ -114,23 +114,26 @@ macro_rules! impl_word {
     };
 }
 
+// impl_word!(u8, P = ???, Q = ???);
 impl_word!(u16, P = 0xB7E1, Q = 0x9E37);
 impl_word!(u32, P = 0xB7E15163, Q = 0x9E3779B9);
 impl_word!(u64, P = 0xB7E151628AED2A6B, Q = 0x9E3779B97F4A7C15);
+// impl_word!(u128, P = ???, Q = ???);
 
 pub trait ConstZero {
     const ZERO: Self;
 }
 
-impl ConstZero for u16 {
-    const ZERO: Self = 0;
+macro_rules! impl_const_zero {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl ConstZero for $ty {
+                const ZERO: Self = 0;
+            }
+        )*
+    };
 }
-impl ConstZero for u32 {
-    const ZERO: Self = 0;
-}
-impl ConstZero for u64 {
-    const ZERO: Self = 0;
-}
+impl_const_zero!(u8, u16, u32, u64, u128);
 
 #[const_trait]
 pub trait ConstWrappingAdd {
@@ -138,18 +141,17 @@ pub trait ConstWrappingAdd {
 }
 
 macro_rules! impl_const_wrapping_add {
-    ($ty:ty) => {
-        impl const ConstWrappingAdd for $ty {
-            fn wrapping_add(self, rhs: Self) -> Self {
-                <$ty>::wrapping_add(self, rhs)
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl const ConstWrappingAdd for $ty {
+                fn wrapping_add(self, rhs: Self) -> Self {
+                    <$ty>::wrapping_add(self, rhs)
             }
-        }
+        })*
     };
 }
 
-impl_const_wrapping_add!(u16);
-impl_const_wrapping_add!(u32);
-impl_const_wrapping_add!(u64);
+impl_const_wrapping_add!(u8, u16, u32, u64, u128);
 
 mod sealed {
     pub trait Sealed {}
@@ -313,6 +315,12 @@ mod tests {
         assert_eq!(output, expected);
     }
 
+    // TODO impl Word for u8
+    // #[test]
+    // fn test_rc5_8_12_4() {
+    //     test::<u8>(12, "00010203", "0001", "212A")
+    // }
+
     #[test]
     fn test_rc5_16_16_8() {
         test::<u16>(16, "0001020304050607", "00010203", "23A8D72E")
@@ -337,6 +345,18 @@ mod tests {
             "A46772820EDBCE0235ABEA32AE7178DA",
         )
     }
+
+    // TODO impl Word for u128
+    // #[test]
+    // fn rc5_128_28_32() {
+    //     test::<u128>(
+    //         28,
+    //         "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+    //         "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F",
+    //         "ECA5910921A4F4CFDD7AD7AD20A1FCBA
+    //               068EC7A7CD752D68FE914B7FE180B440",
+    //     )
+    // }
 }
 
 /*
