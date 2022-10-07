@@ -1,5 +1,5 @@
 //! [`RC5`](https://www.grc.com/r&d/rc5.pdf) is a codec parameterized by the following:
-//! - word size. This crate supports word sizes [u16], [u32] and [u64]
+//! - word size. This crate supports word sizes [u8], [u16], [u32], [u64] and [u128]
 //! - number of encryption rounds, `0..=255`
 //! - key length, `0..=255` bytes
 //!
@@ -21,13 +21,14 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
+mod control_block;
 mod iter_decoder;
 mod iter_encoder;
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
 use smallvec::{smallvec, SmallVec};
 
-pub const MAX_KEY_LEN: usize = 255;
+pub const MAX_KEY_LEN: usize = u8::MAX as _;
 
 /// rc5 encode the given `plaintext`.
 /// ```
