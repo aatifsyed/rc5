@@ -38,6 +38,34 @@ impl ControlBlock {
             Width::_128 => iter_encoder!(u128),
         }
     }
+    // oh we love to wrangle lifetimes
+    pub fn decoder<'inner, 'iter, InnerT>(
+        &self,
+        inner: InnerT,
+    ) -> Box<dyn Iterator<Item = u8> + 'inner>
+    where
+        InnerT: 'inner,
+        InnerT: IntoIterator<Item = &'iter u8>,
+    {
+        macro_rules! iter_decoder {
+            ($ty:ty) => {
+                Box::new(crate::IterDecoder::new(
+                    crate::Transcoder::<$ty>::new(
+                        crate::SecretKey { buffer: &self.key },
+                        self.header.num_rounds,
+                    ),
+                    inner,
+                ))
+            };
+        }
+        match self.header.bits_per_word {
+            Width::_8 => iter_decoder!(u8),
+            Width::_16 => iter_decoder!(u16),
+            Width::_32 => iter_decoder!(u32),
+            Width::_64 => iter_decoder!(u64),
+            Width::_128 => iter_decoder!(u128),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +213,8 @@ mod tests {
 
         let encoded_input = control_block.encoder(&input[..]).collect::<Vec<_>>();
         assert_eq!(encoded_input, output);
+        let decoded_output = control_block.decoder(&output[..]).collect::<Vec<_>>();
+        assert_eq!(decoded_output, input);
     }
 
     /// from https://datatracker.ietf.org/doc/html/draft-krovetz-rc6-rc5-vectors-00#section-4
