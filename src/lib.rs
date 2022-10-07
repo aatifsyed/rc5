@@ -5,10 +5,11 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
+mod decoder;
 mod encoder;
+pub use decoder::Decoder;
 pub use encoder::Encoder;
 
-use anyhow::{anyhow, Context};
 // TODO:
 // - test endianness
 // - add a compile time API for num_rounds
@@ -373,7 +374,25 @@ where
         Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         plaintext.as_ref(),
     )
-    .collect::<Vec<_>>()
+    .collect()
+}
+
+pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+where
+    WordT: Word
+        + Clone
+        + ConstWrappingAdd
+        + ConstZero
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub,
+{
+    Decoder::new(
+        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
+        ciphertext.as_ref(),
+    )
+    .collect()
 }
 
 /*
@@ -384,16 +403,5 @@ pub fn decode_block_rc5_32_12_16(
     key: impl AsRef<[u8]>,
     ciphertext: impl AsRef<[u8]>,
 ) -> anyhow::Result<Vec<u8>> {
-    type Word = u32;
-    let num_rounds = 12; // The number of rounds to use when encrypting data.
-    let ciphertext_block: &[Word; 2] = bytemuck::try_cast_slice(ciphertext.as_ref())
-        .map_err(|e| anyhow!(e))?
-        .try_into()
-        .context("invalid block length")?;
-
-    Ok(Transcoder::try_new(key, num_rounds)?
-        .decode_block(ciphertext_block)
-        .into_iter()
-        .flat_map(u32::to_le_bytes)
-        .collect())
+    Ok(decode::<u32>(key, ciphertext, 12))
 }
