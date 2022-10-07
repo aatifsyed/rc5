@@ -9,7 +9,6 @@ mod encoder;
 pub use encoder::Encoder;
 
 use anyhow::{anyhow, Context};
-use tap::Pipe;
 // TODO:
 // - test endianness
 // - add a compile time API for num_rounds
@@ -359,23 +358,22 @@ mod tests {
     // }
 }
 
-/*
- * This function should return a cipher text for a given key and plaintext
- *
- */
-pub fn encode_block_rc5_32_12_16(
-    key: impl AsRef<[u8]>,
-    plaintext: impl AsRef<[u8]>,
-) -> anyhow::Result<Vec<u8>> {
-    type Word = u32;
-    let num_rounds = 12;
-
+pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+where
+    WordT: Word
+        + Clone
+        + ConstWrappingAdd
+        + ConstZero
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub,
+{
     Encoder::new(
-        Transcoder::<Word>::try_new(key, num_rounds)?,
+        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
         plaintext.as_ref(),
     )
     .collect::<Vec<_>>()
-    .pipe(Ok)
 }
 
 /*
