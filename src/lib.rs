@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 #![feature(const_for, const_mut_refs, const_trait_impl)]
-use std::{mem::size_of, num::NonZeroUsize};
+use std::{borrow::Cow, mem::size_of, num::NonZeroUsize};
 // TODO:
 // - test endianness
 // - move as much as possible to compile time
@@ -23,6 +23,41 @@ impl<'a> TryFrom<&'a [u8]> for SecretKey<'a> {
             "secret key length of {num_bytes} is not in allowed range 0..=255"
         );
         Ok(Self { buffer })
+    }
+}
+
+impl<'a, WordT> From<SecretKey<'a>> for Cow<'a, [WordT]>
+where
+    WordT: Word + num::Zero,
+    WordT: bytemuck::Pod,
+    [WordT]: ToOwned,
+{
+    fn from(value: SecretKey<'a>) -> Self {
+        use bytemuck::PodCastError::{
+            AlignmentMismatch, OutputSliceWouldHaveSlop, SizeMismatch,
+            TargetAlignmentGreaterAndInputNotAligned,
+        };
+        match bytemuck::try_cast_slice(value.buffer) {
+            Ok(words) => Cow::Borrowed(words),
+            Err(AlignmentMismatch) | Err(TargetAlignmentGreaterAndInputNotAligned) => {
+                unreachable!("align_of::<impl Word>() == align_of::<u8>() (Word is a sealed trait)")
+            }
+            Err(OutputSliceWouldHaveSlop) => {
+                let b = value.buffer.len();
+                assert_ne!(b, 0, "empty slices should have been Cow::Borrowed");
+                // make L at least as many bytes long as secret_key
+                let mut backing_words =
+                    vec![WordT::zero(); num::integer::div_ceil(b, size_of::<WordT>())];
+                for (src, dst) in value.buffer.iter().zip(
+                    bytemuck::try_cast_slice_mut::<_, u8>(&mut backing_words)
+                        .expect("WordT is Pod, so should be find to cast to bytes"),
+                ) {
+                    *dst = *src
+                }
+                Cow::from(backing_words)
+            }
+            Err(SizeMismatch) => unreachable!("both pointers are thick"), // doesn't seem right - double check bytemuch for what this actually means
+        }
     }
 }
 
@@ -127,32 +162,13 @@ const fn prepare_s_array<WordT: Word + ConstZero + Copy + ~const ConstWrappingAd
     S
 }
 
-fn make_secret_key_working_array<WordT: num::Zero + Clone + bytemuck::Pod>(
-    key: SecretKey,
-) -> Vec<WordT> {
-    let mut b = key.buffer.len();
-    if b == 0 {
-        b = 1
-    }
-    // make L at least as many bytes long as secret_key
-    let mut L = vec![WordT::zero(); num::integer::div_ceil(b, size_of::<WordT>())];
-    for (src, dst) in key
-        .buffer
-        .iter()
-        .zip(bytemuck::cast_slice_mut::<_, u8>(&mut L))
-    {
-        *dst = *src
-    }
-    L
-}
-
 fn mix_secret_key_into_s_array<
     WordT: Word + num::PrimInt + Clone + bytemuck::Pod + ConstZero + ~const ConstWrappingAdd,
 >(
     key: SecretKey,
     num_rounds: u8,
 ) -> Vec<WordT> {
-    let mut L = make_secret_key_working_array::<WordT>(key);
+    let mut L = Cow::<[WordT]>::from(key).to_vec();
     let mut S = prepare_s_array::<WordT>(num_rounds);
 
     let (mut i, mut j) = (0, 0);
