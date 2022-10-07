@@ -156,10 +156,10 @@ where
 
         for i in 1..=self.num_rounds as usize {
             A = (A ^ B)
-                .rotate_left(B.to_u32().expect("word is too wide"))
+                .rotate_left(B.to_u128().expect("word is too wide") as _)
                 .wrapping_add(&self.S[2 * i]);
             B = (B ^ A)
-                .rotate_left(A.to_u32().expect("word is too wide"))
+                .rotate_left(A.to_u128().expect("word is too wide") as _)
                 .wrapping_add(&self.S[2 * i + 1]);
         }
 
@@ -177,10 +177,10 @@ where
 
         for i in (1..=self.num_rounds as usize).rev() {
             B = (B.wrapping_sub(&self.S[2 * i + 1]))
-                .rotate_right(A.to_u32().expect("word is too wide"))
+                .rotate_right(A.to_u128().expect("word is too wide") as _)
                 ^ A;
             A = (A.wrapping_sub(&self.S[2 * i]))
-                .rotate_right(B.to_u32().expect("word is too wide"))
+                .rotate_right(B.to_u128().expect("word is too wide") as _)
                 ^ B;
         }
 
@@ -226,7 +226,7 @@ fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::Wra
         S[i] = (S[i].wrapping_add(&A).wrapping_add(&B)).rotate_left(3);
         A = S[i];
         L[j] = (L[j].wrapping_add(&A).wrapping_add(&B))
-            .rotate_left(A.wrapping_add(&B).to_u32().expect("word is too wide"));
+            .rotate_left(A.wrapping_add(&B).to_u128().expect("word is too wide") as _);
         B = L[j];
         i = (i + 1) % t(num_rounds);
         j = (j + 1) % c;
