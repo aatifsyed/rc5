@@ -1,7 +1,7 @@
 //! [`RC5`](https://www.grc.com/r&d/rc5.pdf) is a codec parameterized by the following:
 //! - word size. This crate supports word sizes [u16], [u32] and [u64]
-//! - number of encryption rounds, 0..=255
-//! - key length, 0..=255 bytes
+//! - number of encryption rounds, `0..=255`
+//! - key length, `0..=255` bytes
 //!
 //! This is often written as RC5/`word size`/`num rounds`/`key length`.
 //!
@@ -311,6 +311,7 @@ where
 // Could be persuaded once `awint` and `num` are better friends.
 pub trait Word: sealed::Sealed {
     /// A magic constant
+    // my `const fn` implementation of this had floating point errors - see commit history
     const P: Self;
     /// A magic constant
     const Q: Self;
