@@ -22,10 +22,10 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
-mod control_block;
+mod dynamic;
 mod iter_decoder;
 mod iter_encoder;
-pub use control_block::{ControlBlock, ControlBlockHeader, Version, Width};
+pub use dynamic::{ControlBlock, ControlBlockHeader, Version, Width};
 pub use iter_decoder::IterDecoder;
 pub use iter_encoder::IterEncoder;
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
