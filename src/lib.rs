@@ -3,7 +3,6 @@
 use std::{
     borrow::Cow,
     mem::{align_of, size_of},
-    num::NonZeroUsize,
 };
 // TODO:
 // - test endianness
@@ -158,8 +157,8 @@ const fn t(num_rounds: u8) -> usize {
 const T_MAX: usize = t(u8::MAX);
 
 // save a heap allocation for the s array
-// array size could be const N, but since it depends on `num_rounds`, jumping from a runtime num_rounds (which we want) to a compile time num_rounds (which we don't want) is hard
-const fn prepare_s_array<WordT: Word + ConstZero + Copy + ~const ConstWrappingAdd>(
+// array size could be const N, but since it depends on `num_rounds`, but jumping from a runtime num_rounds (which we want) to a compile time num_rounds (which we don't want) is hard
+const fn unmixed_s<WordT: Word + ConstZero + Copy + ~const ConstWrappingAdd>(
     num_rounds: u8,
 ) -> [WordT; T_MAX] {
     let mut S = [WordT::ZERO; T_MAX];
@@ -172,21 +171,22 @@ const fn prepare_s_array<WordT: Word + ConstZero + Copy + ~const ConstWrappingAd
     S
 }
 
-fn mix_secret_key_into_s_array<
+fn mixed_s<
     WordT: Word + num::PrimInt + Clone + bytemuck::Pod + ConstZero + ~const ConstWrappingAdd,
 >(
     key: SecretKey,
     num_rounds: u8,
-) -> Vec<WordT> {
+) -> [WordT; T_MAX] {
     let mut L = Cow::<[WordT]>::from(key).to_vec();
-    let mut S = prepare_s_array::<WordT>(num_rounds);
+    let mut S = unmixed_s::<WordT>(num_rounds);
 
     let (mut i, mut j) = (0, 0);
     let (mut A, mut B) = (WordT::zero(), WordT::zero());
 
-    let c = NonZeroUsize::new(L.len())
-        .unwrap_or(NonZeroUsize::new(1).unwrap())
-        .get();
+    let c = match L.len() {
+        0 => 1,
+        other => other,
+    };
 
     for _ in 0..(std::cmp::max(t(num_rounds), c) * 3) {
         S[i] = (S[i].wrapping_add(A).wrapping_add(B)).rotate_left(3);
@@ -197,7 +197,7 @@ fn mix_secret_key_into_s_array<
         i = (i + 1) % t(num_rounds);
         j = (j + 1) % c;
     }
-    S.into()
+    S
 }
 
 // Could overwrite plaintext in place... maybe the optimizer will notice? ;)
@@ -248,7 +248,7 @@ pub fn encode_block_rc5_32_12_16(key: SecretKey, plaintext: impl AsRef<[u8]>) ->
     type Word = u32;
     let r = 12; // The number of rounds to use when encrypting data.
 
-    let S = mix_secret_key_into_s_array(key, r as _);
+    let S = mixed_s(key, r as _);
     let plaintext: &[Word; 2] = bytemuck::cast_slice(plaintext.as_ref()).try_into().unwrap();
     bytemuck::cast_slice(&encode_block(&S, plaintext, r)).to_owned()
 }
@@ -261,7 +261,7 @@ pub fn decode_block_rc5_32_12_16(key: SecretKey, ciphertext: impl AsRef<[u8]>) -
     type Word = u32;
     let r = 12; // The number of rounds to use when encrypting data.
 
-    let S = mix_secret_key_into_s_array(key, r as _);
+    let S = mixed_s(key, r as _);
     let ciphertext: &[Word; 2] = bytemuck::cast_slice(ciphertext.as_ref())
         .try_into()
         .unwrap();
