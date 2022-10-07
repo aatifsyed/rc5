@@ -288,6 +288,42 @@ fn mixed_s<
     S
 }
 
+pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+where
+    WordT: Word
+        + Clone
+        + ConstWrappingAdd
+        + ConstZero
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub,
+{
+    Encoder::new(
+        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
+        plaintext.as_ref(),
+    )
+    .collect()
+}
+
+pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
+where
+    WordT: Word
+        + Clone
+        + ConstWrappingAdd
+        + ConstZero
+        + bytemuck::Pod
+        + num::PrimInt
+        + num::traits::WrappingAdd
+        + num::traits::WrappingSub,
+{
+    Decoder::new(
+        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
+        ciphertext.as_ref(),
+    )
+    .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -307,12 +343,10 @@ mod tests {
         let key = hex::decode(key).unwrap();
         let input = hex::decode(input).unwrap();
         let output = hex::decode(output).unwrap();
-        let expected = Encoder::new(
-            Transcoder::<WordT>::try_new(key, num_rounds).unwrap(),
-            &input,
-        )
-        .collect::<Vec<u8>>();
-        assert_eq!(output, expected);
+        let encoded_input = encode::<WordT>(&key, &input, num_rounds);
+        assert_eq!(output, encoded_input);
+        let decoded_output = decode::<WordT>(&key, &output, num_rounds);
+        assert_eq!(input, decoded_output);
     }
 
     // TODO impl Word for u8
@@ -357,51 +391,4 @@ mod tests {
     //               068EC7A7CD752D68FE914B7FE180B440",
     //     )
     // }
-}
-
-pub fn encode<WordT>(key: impl AsRef<[u8]>, plaintext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
-where
-    WordT: Word
-        + Clone
-        + ConstWrappingAdd
-        + ConstZero
-        + bytemuck::Pod
-        + num::PrimInt
-        + num::traits::WrappingAdd
-        + num::traits::WrappingSub,
-{
-    Encoder::new(
-        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
-        plaintext.as_ref(),
-    )
-    .collect()
-}
-
-pub fn decode<WordT>(key: impl AsRef<[u8]>, ciphertext: impl AsRef<[u8]>, num_rounds: u8) -> Vec<u8>
-where
-    WordT: Word
-        + Clone
-        + ConstWrappingAdd
-        + ConstZero
-        + bytemuck::Pod
-        + num::PrimInt
-        + num::traits::WrappingAdd
-        + num::traits::WrappingSub,
-{
-    Decoder::new(
-        Transcoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
-        ciphertext.as_ref(),
-    )
-    .collect()
-}
-
-/*
- * This function should return a plaintext for a given key and ciphertext
- *
- */
-pub fn decode_block_rc5_32_12_16(
-    key: impl AsRef<[u8]>,
-    ciphertext: impl AsRef<[u8]>,
-) -> anyhow::Result<Vec<u8>> {
-    Ok(decode::<u32>(key, ciphertext, 12))
 }
