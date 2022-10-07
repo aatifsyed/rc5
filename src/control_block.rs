@@ -22,7 +22,7 @@ impl ControlBlock {
         macro_rules! iter_encoder {
             ($ty:ty) => {
                 Box::new(crate::IterEncoder::new(
-                    crate::Transcoder::<u8>::new(
+                    crate::Transcoder::<$ty>::new(
                         crate::SecretKey { buffer: &self.key },
                         self.header.num_rounds,
                     ),
@@ -111,6 +111,14 @@ impl<const N: usize> TryFrom<&[u8; N]> for &ControlBlock {
 mod tests {
     use super::*;
 
+    impl Width {
+        fn of<T>() -> Self {
+            let num_bits = size_of::<T>() * 8;
+            let num_bits = u8::try_from(num_bits).unwrap();
+            Self::try_from(num_bits).unwrap()
+        }
+    }
+
     #[test]
     fn empty_key() {
         let backing_storage = [Version::_1 as u8, 16, 0, 0];
@@ -165,11 +173,15 @@ mod tests {
             "{version:02x?}{bits_per_word:02x?}{num_rounds:02x?}{key_length:02x?}{key}",
             version = Version::_1 as u8,
             key_length = key.len(),
-            key = hex::encode(key),
+            key = hex::encode(&key),
         );
 
         let backing_storage = hex::decode(hex_encoded).unwrap();
         let control_block = <&ControlBlock>::try_from(&backing_storage[..]).unwrap();
+        assert_eq!(usize::from(control_block.header.key_length), key.len());
+        assert_eq!(control_block.header.bits_per_word, Width::of::<T>());
+        assert_eq!(control_block.header.num_rounds, num_rounds);
+        assert_eq!(&control_block.key, key);
 
         let encoded_input = control_block.encoder(&input[..]).collect::<Vec<_>>();
         assert_eq!(encoded_input, output);
