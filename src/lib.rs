@@ -6,28 +6,24 @@
 //! This is often written as RC5/`word size`/`num rounds`/`key length`.
 //!
 //! For one time use, use the [encode_all] and [decode_all] functions.
-//! For adapting iterators, use [IterEncoder] and [IterDecoder].
-//! If the word size is not known at compile time, you may use the [iter::encoder] and [iter::decoder] functions
-//! to dispatch to an iterator adapter.
 
 // I've stuck to the names of constants in the paper where it makes sense
 // (despite the publishers apparantly charging per-letter...)
 // # TODO:
+// - public utilities for bytes -> Block -> bytes, including finishers for padding
+// - Iterator<Item = u8> adaptors
 // - test on a little-endian machine
 // - add a compile time API - see the commit history for some of this being `const fn` etc
 //   lots of potential (particularly on nightly) for num_rounds, S etc being compile time
-// - io::{Read, Write} adapters
+// - io::{Read, Write} adaptors
 
+use array_macro::array;
 use smallvec::{smallvec, SmallVec};
 use std::{
     borrow::Cow,
     fmt,
     mem::{align_of, size_of},
 };
-mod iter_impl;
-pub use iter_impl::{IterDecoder, IterEncoder};
-
-// TODO have an io::encoder, io::decoder
 
 pub const MAX_KEY_LEN: usize = u8::MAX as _;
 
@@ -57,11 +53,12 @@ where
         + num::traits::WrappingSub
         + zeroize::Zeroize,
 {
-    IterEncoder::new(
-        BlockTranscoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
-        plaintext.as_ref(),
-    )
-    .collect()
+    let key = SecretKey::try_from(key.as_ref()).unwrap();
+    let transcoder = BlockTranscoder::new(key, num_rounds);
+    blocks::<WordT>(plaintext.as_ref())
+        .map(|plaintext_block| transcoder.encode_block(&plaintext_block))
+        .flat_map(|[a, b]| a.to_le_bytes().into_iter().chain(b.to_le_bytes()))
+        .collect()
 }
 
 /// rc5 decode the given `ciphertext`.
@@ -90,11 +87,41 @@ where
         + num::traits::WrappingSub
         + zeroize::Zeroize,
 {
-    IterDecoder::new(
-        BlockTranscoder::<WordT>::try_new(key, num_rounds).expect("key is too large"),
-        ciphertext.as_ref(),
-    )
-    .collect()
+    let key = SecretKey::try_from(key.as_ref()).unwrap();
+    let transcoder = BlockTranscoder::new(key, num_rounds);
+    blocks::<WordT>(ciphertext.as_ref())
+        .map(|ciphertext_block| transcoder.decode_block(&ciphertext_block))
+        .flat_map(|[a, b]| a.to_le_bytes().into_iter().chain(b.to_le_bytes()))
+        .collect()
+}
+
+/// Rc5 is a block cipher, where bytes are broken into blocks, and each block is two words
+type Block<WordT> = [WordT; 2];
+
+/// Yields blocks, zero-padding the last block.
+/// We don't go through a [Cow] like with [SecretKey] because:
+/// - [SecretKey] must be indexable - see [mixed_s]
+/// - We don't want to reallocate `bytes` in the (likely!) case that it's not a multiple of size_of::<WordT>()
+// TODO: custom padding
+fn blocks<WordT: bytemuck::Pod + num::Zero>(
+    bytes: &[u8],
+) -> impl Iterator<Item = Block<WordT>> + '_ {
+    bytes.chunks(size_of::<Block<WordT>>()).map(|chunk| {
+        if chunk.len() == size_of::<Block<WordT>>() {
+            bytemuck::cast_slice::<_, WordT>(chunk)
+                .try_into()
+                .expect("already checked len")
+        } else {
+            let mut padded_final_word = array![WordT::zero(); 2];
+            for (src, dst) in chunk
+                .iter()
+                .zip(bytemuck::bytes_of_mut(&mut padded_final_word))
+            {
+                *dst = *src;
+            }
+            padded_final_word
+        }
+    })
 }
 
 /// A constant used in the encryption algorithm
@@ -107,13 +134,12 @@ const fn t(num_rounds: u8) -> usize {
 /// - make an `S` array: [unmixed_s]
 /// - mix in the secret key: [mixed_s]
 /// - for each block in the output:
-///   - do encode scrambling: [Transcoder::encode_block]
-///   - do decode scrambling: [Transcoder::decode_block]
+///   - do encode scrambling: [BlockTranscoder::encode_block]
+///   - do decode scrambling: [BlockTranscoder::decode_block]
 // we could trade off the heap allocation by returning `[WordT; t(u8::MAX)]`, but that could be 2K for a 64 bit word size
-// TODO use smallvec to optimize for not allocating for common params
 // we could also have `fn unmixed_s<const N: u8, ..>(..) -> [WordT; t(N)]` but `generic_const_exprs` isn't usable,
-// and jumping from runtime num_rounds to compile time will be a pain
-fn unmixed_s<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
+//     and jumping from runtime num_rounds to compile time will be a pain
+fn unscheduled<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
     num_rounds: u8,
 ) -> SmallVec<[WordT; 20]> {
     #![allow(non_snake_case)]
@@ -128,14 +154,14 @@ fn unmixed_s<WordT: Word + Copy + num::Zero + num::traits::WrappingAdd>(
 }
 
 /// Create and return the `S` array, with the secret key mixed in
-fn mixed_s<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
+fn scheduled<WordT: Word + num::PrimInt + Clone + bytemuck::Pod + num::traits::WrappingAdd>(
     key: SecretKey,
     num_rounds: u8,
 ) -> SmallVec<[WordT; 20]> {
     #![allow(non_snake_case)]
     // The secret key as an array of words, zero padded if there is any slack
     let mut L = Cow::<[WordT]>::from(key).to_vec();
-    let mut S = unmixed_s::<WordT>(num_rounds);
+    let mut S = unscheduled::<WordT>(num_rounds);
 
     let (mut i, mut j) = (0, 0);
     let (mut A, mut B) = (WordT::zero(), WordT::zero());
@@ -161,11 +187,11 @@ impl<WordT: zeroize::Zeroize> BlockTranscoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingAdd,
 {
-    /// Encrypt the given word block using the secret key stored in the [Transcoder]
+    /// Encrypt the given word block using the secret key stored in the [BlockTranscoder]
     //                                         ^ A white lie
     // We could overwrite plaintext in place, but the optimizer will probably notice for us, so this becomes the caller's decision
     // Method rather than pub fn so we guarantee that our indices into S are in-bounds
-    pub fn encode_block(&self, plaintext: &[WordT; 2]) -> [WordT; 2] {
+    pub fn encode_block(&self, plaintext: &Block<WordT>) -> Block<WordT> {
         #![allow(non_snake_case)]
         let mut A = plaintext[0].wrapping_add(&self.S[0]);
         let mut B = plaintext[1].wrapping_add(&self.S[1]);
@@ -186,8 +212,8 @@ impl<WordT: zeroize::Zeroize> BlockTranscoder<WordT>
 where
     WordT: num::PrimInt + num::traits::WrappingSub,
 {
-    /// Decrypt the given word block using the secret key stored in the [Transcoder]
-    pub fn decode_block(&self, ciphertext: &[WordT; 2]) -> [WordT; 2] {
+    /// Decrypt the given word block using the secret key stored in the [BlockTranscoder]
+    pub fn decode_block(&self, ciphertext: &Block<WordT>) -> Block<WordT> {
         #![allow(non_snake_case)]
         let mut B = ciphertext[1];
         let mut A = ciphertext[0];
@@ -237,7 +263,7 @@ where
 {
     pub fn new(key: SecretKey, num_rounds: u8) -> Self {
         Self {
-            S: zeroize::Zeroizing::new(mixed_s(key, num_rounds).to_vec()),
+            S: zeroize::Zeroizing::new(scheduled(key, num_rounds).to_vec()),
             num_rounds,
         }
     }
@@ -324,6 +350,11 @@ pub trait Word: sealed::Sealed {
     const P: Self;
     /// A magic constant
     const Q: Self;
+
+    type LeBytes: IntoIterator<Item = u8>; // TODO rustc 1.65 - can we remove this?
+
+    /// Avoid an allocation when flattening the output block stream by returning a known type
+    fn to_le_bytes(self) -> Self::LeBytes;
 }
 
 macro_rules! impl_word {
@@ -331,8 +362,13 @@ macro_rules! impl_word {
         impl Word for $ty {
             const P: Self = $p;
             const Q: Self = $q;
+            type LeBytes = [u8; size_of::<$ty>()];
+            fn to_le_bytes(self) -> Self::LeBytes {
+                self.to_le_bytes()
+            }
         }
         static_assertions::const_assert_eq!(align_of::<$ty>() % align_of::<u8>(), 0);
+        impl sealed::Sealed for $ty {}
     };
 }
 
@@ -348,11 +384,6 @@ impl_word!(
 
 mod sealed {
     pub trait Sealed {}
-    impl Sealed for u8 {}
-    impl Sealed for u16 {}
-    impl Sealed for u32 {}
-    impl Sealed for u64 {}
-    impl Sealed for u128 {}
 }
 
 #[cfg(test)]
