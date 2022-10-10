@@ -24,16 +24,8 @@ use std::{
     fmt,
     mem::{align_of, size_of},
 };
-mod dynamic;
-mod io_impl;
 mod iter_impl;
-pub use dynamic::{ControlBlock, ControlBlockHeader, Version, WordSize};
-pub use io_impl::{IoDecoder, IoEncoder};
 pub use iter_impl::{IterDecoder, IterEncoder};
-
-pub mod iter {
-    pub use crate::dynamic::{decoder, encoder};
-}
 
 // TODO have an io::encoder, io::decoder
 
